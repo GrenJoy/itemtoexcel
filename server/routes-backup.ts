@@ -294,7 +294,7 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
         const marketData = await processItemForMarket(itemName);
         
         if (marketData) {
-          await storage.createInventoryItem(sessionId, {
+          await storage.createInventoryItem({
             name: itemName,
             slug: marketData.slug,
             quantity,
@@ -307,7 +307,7 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
           });
           await storage.addProcessingLog(jobId, `Added new item: ${itemName} (${quantity}x)`);
         } else {
-          await storage.createInventoryItem(sessionId, {
+          await storage.createInventoryItem({
             name: itemName,
             slug: null,
             quantity,
@@ -450,7 +450,7 @@ async function processImagesWithExcelAsync(jobId: string, sessionId: string, ima
         const marketData = await processItemForMarket(itemName);
         
         if (marketData) {
-          await storage.createInventoryItem(sessionId, {
+          await storage.createInventoryItem({
             name: itemName,
             slug: marketData.slug,
             quantity,
@@ -463,7 +463,7 @@ async function processImagesWithExcelAsync(jobId: string, sessionId: string, ima
           });
           await storage.addProcessingLog(jobId, `Added new item: ${itemName} (${quantity}x)`);
         } else {
-          await storage.createInventoryItem(sessionId, {
+          await storage.createInventoryItem({
             name: itemName,
             slug: null,
             quantity,

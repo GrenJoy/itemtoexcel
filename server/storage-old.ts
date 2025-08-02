@@ -35,17 +35,15 @@ export class MemStorage implements IStorage {
     return this.inventoryItems.get(sessionId)!;
   }
 
-  async getInventoryItems(sessionId: string): Promise<InventoryItem[]> {
-    const sessionInventory = this.getSessionInventory(sessionId);
-    return Array.from(sessionInventory.values());
+  async getInventoryItems(): Promise<InventoryItem[]> {
+    return Array.from(this.inventoryItems.values());
   }
 
-  async getInventoryItem(sessionId: string, id: string): Promise<InventoryItem | undefined> {
-    const sessionInventory = this.getSessionInventory(sessionId);
-    return sessionInventory.get(id);
+  async getInventoryItem(id: string): Promise<InventoryItem | undefined> {
+    return this.inventoryItems.get(id);
   }
 
-  async createInventoryItem(sessionId: string, insertItem: InsertInventoryItem): Promise<InventoryItem> {
+  async createInventoryItem(insertItem: InsertInventoryItem): Promise<InventoryItem> {
     const id = randomUUID();
     const item: InventoryItem = { 
       ...insertItem, 
@@ -56,51 +54,38 @@ export class MemStorage implements IStorage {
       avgSell: insertItem.avgSell ?? 0,
       avgBuy: insertItem.avgBuy ?? 0
     };
-    const sessionInventory = this.getSessionInventory(sessionId);
-    sessionInventory.set(id, item);
+    this.inventoryItems.set(id, item);
     return item;
   }
 
-  async updateInventoryItem(sessionId: string, id: string, updates: Partial<InventoryItem>): Promise<InventoryItem> {
-    const sessionInventory = this.getSessionInventory(sessionId);
-    const existing = sessionInventory.get(id);
+  async updateInventoryItem(id: string, updates: Partial<InventoryItem>): Promise<InventoryItem> {
+    const existing = this.inventoryItems.get(id);
     if (!existing) {
       throw new Error(`Inventory item with id ${id} not found`);
     }
     const updated: InventoryItem = { ...existing, ...updates };
-    sessionInventory.set(id, updated);
+    this.inventoryItems.set(id, updated);
     return updated;
   }
 
-  async updateInventoryItemQuantity(sessionId: string, update: UpdateQuantity): Promise<InventoryItem> {
-    const sessionInventory = this.getSessionInventory(sessionId);
-    const existing = sessionInventory.get(update.id);
+  async updateInventoryItemQuantity(update: UpdateQuantity): Promise<InventoryItem> {
+    const existing = this.inventoryItems.get(update.id);
     if (!existing) {
       throw new Error(`Inventory item with id ${update.id} not found`);
     }
     const updated: InventoryItem = { ...existing, quantity: update.quantity };
-    sessionInventory.set(update.id, updated);
+    this.inventoryItems.set(update.id, updated);
     return updated;
   }
 
-  async deleteInventoryItem(sessionId: string, id: string): Promise<void> {
-    const sessionInventory = this.getSessionInventory(sessionId);
-    sessionInventory.delete(id);
+  async deleteInventoryItem(id: string): Promise<void> {
+    this.inventoryItems.delete(id);
   }
 
-  async findInventoryItemByName(sessionId: string, name: string): Promise<InventoryItem | undefined> {
-    const sessionInventory = this.getSessionInventory(sessionId);
-    for (const item of sessionInventory.values()) {
-      if (item.name.toLowerCase().trim() === name.toLowerCase().trim()) {
-        return item;
-      }
-    }
-    return undefined;
-  }
-
-  async clearInventory(sessionId: string): Promise<void> {
-    const sessionInventory = this.getSessionInventory(sessionId);
-    sessionInventory.clear();
+  async findInventoryItemByName(name: string): Promise<InventoryItem | undefined> {
+    return Array.from(this.inventoryItems.values()).find(
+      (item) => item.name.toLowerCase().trim() === name.toLowerCase().trim()
+    );
   }
 
   async getProcessingJob(id: string): Promise<ProcessingJob | undefined> {
@@ -143,6 +128,10 @@ export class MemStorage implements IStorage {
     logs.push(`${new Date().toLocaleTimeString()}: ${log}`);
     const updated: ProcessingJob = { ...existing, logs };
     this.processingJobs.set(id, updated);
+  }
+
+  async clearInventory(): Promise<void> {
+    this.inventoryItems.clear();
   }
 }
 
