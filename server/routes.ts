@@ -32,41 +32,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Process images with optional Excel file upload
-  app.post("/api/process-with-excel", upload.fields([
-    { name: 'images', maxCount: 20 },
-    { name: 'excelFile', maxCount: 1 }
-  ]), async (req, res) => {
+  // Load Excel file into database (first time only)
+  app.post("/api/load-excel", upload.single('excelFile'), async (req, res) => {
     try {
-      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-      const imageFiles = files.images || [];
-      const excelFiles = files.excelFile || [];
-
-      if (imageFiles.length === 0) {
-        return res.status(400).json({ message: "No images provided" });
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ message: "No Excel file provided" });
       }
 
       // Create processing job
       const job = await storage.createProcessingJob({
         status: "processing",
-        totalImages: imageFiles.length,
+        totalImages: 0,
         processedImages: 0,
         totalItems: 0,
         processedItems: 0,
         logs: []
       });
 
-      // Process images and Excel file asynchronously
+      // Load Excel file asynchronously
       const sessionId = req.sessionID;
-      processImagesWithExcelAsync(job.id, sessionId, imageFiles, excelFiles[0]).catch(error => {
-        console.error('Error processing images with Excel:', error);
+      loadExcelFileAsync(job.id, sessionId, file).catch(error => {
+        console.error('Error loading Excel file:', error);
         storage.updateProcessingJob(job.id, { status: "failed" });
         storage.addProcessingLog(job.id, `Error: ${error instanceof Error ? error.message : String(error)}`);
       });
 
       res.json({ jobId: job.id });
     } catch (error) {
-      res.status(500).json({ message: "Failed to start image processing with Excel" });
+      res.status(500).json({ message: "Failed to start Excel loading" });
+    }
+  });
+
+  // Add screenshots to existing inventory (unlimited)
+  app.post("/api/add-screenshots", upload.array('images'), async (req, res) => {
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No images provided" });
+      }
+
+      // Create processing job
+      const job = await storage.createProcessingJob({
+        status: "processing",
+        totalImages: files.length,
+        processedImages: 0,
+        totalItems: 0,
+        processedItems: 0,
+        logs: []
+      });
+
+      // Process images asynchronously (add to existing inventory)
+      const sessionId = req.sessionID;
+      processImagesAsync(job.id, sessionId, files, 'edit').catch(error => {
+        console.error('Error processing images:', error);
+        storage.updateProcessingJob(job.id, { status: "failed" });
+        storage.addProcessingLog(job.id, `Error: ${error instanceof Error ? error.message : String(error)}`);
+      });
+
+      res.json({ jobId: job.id });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to start image processing" });
     }
   });
 
@@ -408,163 +434,74 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
   await storage.addProcessingLog(jobId, "Processing completed successfully!");
 }
 
-async function processImagesWithExcelAsync(jobId: string, sessionId: string, imageFiles: Express.Multer.File[], excelFile?: Express.Multer.File, mode: 'edit' = 'edit') {
-  await storage.addProcessingLog(jobId, "Starting image analysis with Excel integration...");
-
-  // Load existing Excel data if provided
-  let existingData: Map<string, any> = new Map();
-  if (excelFile) {
-    try {
-      await storage.addProcessingLog(jobId, `Loading existing Excel file: ${excelFile.originalname}`);
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(excelFile.buffer);
-      const worksheet = workbook.getWorksheet(1);
-      
-      if (worksheet) {
-        worksheet.eachRow((row, rowNumber) => {
-          if (rowNumber > 1) { // Skip header row
-            const itemName = row.getCell(1).value?.toString();
-            const quantity = parseInt(row.getCell(2).value?.toString() || '0');
-            const slug = row.getCell(3).value?.toString();
-            const sellPrices = row.getCell(4).value?.toString();
-            const buyPrices = row.getCell(5).value?.toString();
-            const avgSell = parseFloat(row.getCell(6).value?.toString() || '0');
-            const avgBuy = parseFloat(row.getCell(7).value?.toString() || '0');
-            const marketUrl = row.getCell(8).value?.toString();
-            
-            if (itemName) {
-              existingData.set(itemName, {
-                quantity,
-                slug,
-                sellPrices: sellPrices && sellPrices !== 'Нет' ? sellPrices.split(', ').map(Number) : [],
-                buyPrices: buyPrices && buyPrices !== 'Нет' ? buyPrices.split(', ').map(Number) : [],
-                avgSell,
-                avgBuy,
-                marketUrl
-              });
-            }
-          }
-        });
-        await storage.addProcessingLog(jobId, `Loaded ${existingData.size} items from Excel file`);
-      }
-    } catch (error) {
-      await storage.addProcessingLog(jobId, `Error loading Excel file: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  const allItemNames: string[] = [];
-
-  // Process each image
-  for (let i = 0; i < imageFiles.length; i++) {
-    const file = imageFiles[i];
-    await storage.addProcessingLog(jobId, `Analyzing image ${i + 1}/${imageFiles.length}: ${file.originalname}`);
-
-    try {
-      const base64Image = file.buffer.toString('base64');
-      const items = await analyzeInventoryImage(base64Image);
-      allItemNames.push(...items);
-
-      await storage.updateProcessingJob(jobId, { processedImages: i + 1 });
-      await storage.addProcessingLog(jobId, `Found ${items.length} items in ${file.originalname}`);
-    } catch (error) {
-      await storage.addProcessingLog(jobId, `Error analyzing ${file.originalname}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  // Count item quantities
-  const itemCounts = new Map<string, number>();
-  for (const itemName of allItemNames) {
-    itemCounts.set(itemName, (itemCounts.get(itemName) || 0) + 1);
-  }
-
-  await storage.updateProcessingJob(jobId, { 
-    totalItems: itemCounts.size,
-    processedItems: 0 
-  });
-
-  await storage.addProcessingLog(jobId, `Processing ${itemCounts.size} unique items...`);
-
-  // Only clear and reload Excel data if Excel file was provided
-  if (excelFile) {
-    await storage.clearInventory(sessionId);
-    await storage.addProcessingLog(jobId, "Clearing existing inventory and loading Excel data...");
+async function loadExcelFileAsync(jobId: string, sessionId: string, excelFile: Express.Multer.File) {
+  await storage.addProcessingLog(jobId, "Loading Excel file into database...");
+  
+  try {
+    await storage.addProcessingLog(jobId, `Processing Excel file: ${excelFile.originalname}`);
     
-    // Load all existing Excel data into storage
-    for (const [itemName, data] of Array.from(existingData.entries())) {
-      try {
-        await storage.createInventoryItem(sessionId, {
-          name: itemName,
-          slug: data.slug === 'НЕ НАЙДЕН' ? null : data.slug,
-          quantity: data.quantity,
-          sellPrices: data.sellPrices,
-          buyPrices: data.buyPrices,
-          avgSell: data.avgSell,
-          avgBuy: data.avgBuy,
-          marketUrl: data.marketUrl === 'N/A' ? null : data.marketUrl,
-          category: itemName.includes('(Чертеж)') ? 'Чертежи' : 'Prime части'
-        });
-      } catch (error) {
-        await storage.addProcessingLog(jobId, `Error loading existing item ${itemName}: ${error instanceof Error ? error.message : String(error)}`);
-      }
+    // Clear existing inventory first
+    await storage.clearInventory(sessionId);
+    await storage.addProcessingLog(jobId, "Cleared existing inventory");
+    
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(excelFile.buffer);
+    const worksheet = workbook.getWorksheet(1);
+    
+    if (!worksheet) {
+      throw new Error("No worksheet found in Excel file");
     }
-  } else {
-    await storage.addProcessingLog(jobId, "Adding new items to existing inventory...");
-  }
 
-  let processedCount = 0;
-  // Process each unique item from new screenshots
-  for (const [itemName, quantity] of Array.from(itemCounts.entries())) {
-    try {
-      // Check if item already exists (from Excel or previous processing)
-      const existingItem = await storage.findInventoryItemByName(sessionId, itemName);
-      
-      if (existingItem) {
-        // Update quantity (add to existing)
-        await storage.updateInventoryItemQuantity(sessionId, {
-          id: existingItem.id,
-          quantity: existingItem.quantity + quantity
-        });
-        await storage.addProcessingLog(jobId, `Updated existing item: ${itemName} (+${quantity}, total: ${existingItem.quantity + quantity})`);
-      } else {
-        // Get market data and create new item
-        const marketData = await processItemForMarket(itemName);
+    let loadedCount = 0;
+    const totalRows = worksheet.actualRowCount - 1; // Exclude header
+
+    await storage.updateProcessingJob(jobId, { 
+      totalItems: totalRows,
+      processedItems: 0 
+    });
+
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) { // Skip header row
+        const itemName = row.getCell(1).value?.toString();
+        const quantity = parseInt(row.getCell(2).value?.toString() || '0');
+        const slug = row.getCell(3).value?.toString();
+        const sellPrices = row.getCell(4).value?.toString();
+        const buyPrices = row.getCell(5).value?.toString();
+        const avgSell = parseFloat(row.getCell(6).value?.toString() || '0');
+        const avgBuy = parseFloat(row.getCell(7).value?.toString() || '0');
+        const marketUrl = row.getCell(8).value?.toString();
         
-        if (marketData) {
-          await storage.createInventoryItem(sessionId, {
+        if (itemName) {
+          // Create item in database
+          storage.createInventoryItem(sessionId, {
             name: itemName,
-            slug: marketData.slug,
+            slug: slug === 'НЕ НАЙДЕН' ? null : slug,
             quantity,
-            sellPrices: marketData.sellPrices,
-            buyPrices: marketData.buyPrices,
-            avgSell: marketData.avgSell,
-            avgBuy: marketData.avgBuy,
-            marketUrl: marketData.marketUrl,
+            sellPrices: sellPrices && sellPrices !== 'Нет' ? sellPrices.split(', ').map(Number) : [],
+            buyPrices: buyPrices && buyPrices !== 'Нет' ? buyPrices.split(', ').map(Number) : [],
+            avgSell,
+            avgBuy,
+            marketUrl: marketUrl === 'N/A' ? null : marketUrl,
             category: itemName.includes('(Чертеж)') ? 'Чертежи' : 'Prime части'
+          }).then(() => {
+            loadedCount++;
+            storage.updateProcessingJob(jobId, { processedItems: loadedCount });
+            storage.addProcessingLog(jobId, `Loaded: ${itemName} (${quantity}x)`);
+          }).catch(error => {
+            storage.addProcessingLog(jobId, `Error loading ${itemName}: ${error instanceof Error ? error.message : String(error)}`);
           });
-          await storage.addProcessingLog(jobId, `Added new item: ${itemName} (${quantity}x)`);
-        } else {
-          await storage.createInventoryItem(sessionId, {
-            name: itemName,
-            slug: null,
-            quantity,
-            sellPrices: [],
-            buyPrices: [],
-            avgSell: 0,
-            avgBuy: 0,
-            marketUrl: null,
-            category: 'Unknown'
-          });
-          await storage.addProcessingLog(jobId, `Added item (not found in market): ${itemName} (${quantity}x)`);
         }
       }
+    });
 
-      processedCount++;
-      await storage.updateProcessingJob(jobId, { processedItems: processedCount });
-    } catch (error) {
-      await storage.addProcessingLog(jobId, `Error processing ${itemName}: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    // Wait a bit for all items to be processed
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    await storage.updateProcessingJob(jobId, { status: "completed" });
+    await storage.addProcessingLog(jobId, `Excel file loaded successfully! ${loadedCount} items imported.`);
+    
+  } catch (error) {
+    await storage.addProcessingLog(jobId, `Error loading Excel file: ${error instanceof Error ? error.message : String(error)}`);
+    await storage.updateProcessingJob(jobId, { status: "failed" });
   }
-
-  await storage.updateProcessingJob(jobId, { status: "completed" });
-  await storage.addProcessingLog(jobId, "Processing with Excel integration completed successfully!");
 }
