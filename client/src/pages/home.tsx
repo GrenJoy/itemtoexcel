@@ -5,15 +5,14 @@ import { ExcelUpload } from "@/components/excel-upload";
 import { InventoryTable } from "@/components/inventory-table";
 import { ProcessingStatus } from "@/components/processing-status";
 import { Statistics } from "@/components/statistics";
-import { APIKeyModal } from "@/components/api-key-modal";
+
 import { EditQuantityModal } from "@/components/edit-quantity-modal";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Download, Settings, Plus, FileEdit } from "lucide-react";
+import { Bot, Download, Plus, FileEdit } from "lucide-react";
 import type { InventoryItem } from "@shared/schema";
 
 export default function Home() {
-  const [showAPIModal, setShowAPIModal] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'new' | 'excel'>('new');
@@ -59,7 +58,10 @@ export default function Home() {
 
   const handleProcessingComplete = () => {
     refetchInventory();
-    setCurrentJobId(null);
+    // Small delay to allow user to see completion status
+    setTimeout(() => {
+      setCurrentJobId(null);
+    }, 2000);
   };
 
   return (
@@ -85,14 +87,9 @@ export default function Home() {
                 <Download className="mr-2 h-4 w-4" />
                 Export Excel
               </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setShowAPIModal(true)}
-                className="border-gray-600 hover:bg-gray-700"
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
+              <div className="text-xs text-gray-400">
+                Сделано игроком GrendematriX
+              </div>
             </div>
           </div>
         </div>
@@ -156,14 +153,19 @@ export default function Home() {
 
         {/* Statistics */}
         {stats && <Statistics stats={stats as { totalItems: number; totalValue: number; avgPrice: number; uniqueItems: number; }} />}
+        
+        {/* Footer */}
+        <footer className="mt-12 text-center py-8 border-t border-gray-700">
+          <p className="text-gray-400 text-sm">
+            Создано игроком <span className="text-blue-400 font-medium">GrendematriX</span> для сообщества Warframe
+          </p>
+          <p className="text-gray-500 text-xs mt-2">
+            Powered by Google Gemini AI • Warframe Market API • React + TypeScript
+          </p>
+        </footer>
       </div>
 
       {/* Modals */}
-      <APIKeyModal
-        open={showAPIModal}
-        onClose={() => setShowAPIModal(false)}
-      />
-
       <EditQuantityModal
         item={editingItem}
         onClose={() => setEditingItem(null)}

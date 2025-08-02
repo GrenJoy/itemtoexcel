@@ -9,6 +9,9 @@ The application features a modern React frontend with shadcn/ui components and a
 # User Preferences
 
 Preferred communication style: Simple, everyday language.
+Author credit: "Сделано игроком GrendematriX" 
+API Key: Hardcoded fallback included for deployment
+Processing Status: Auto-hide after completion with 2-second delay
 
 # System Architecture
 

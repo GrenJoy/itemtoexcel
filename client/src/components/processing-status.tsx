@@ -20,6 +20,12 @@ export function ProcessingStatus({ jobId, onComplete }: ProcessingStatusProps) {
   useEffect(() => {
     if (job?.status === "completed") {
       onComplete();
+      // Auto-hide after 3 seconds when completed
+      setTimeout(() => {
+        if (job?.status === "completed") {
+          onComplete();
+        }
+      }, 3000);
     }
   }, [job?.status, onComplete]);
 
