@@ -96,6 +96,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update prices from Excel file
+  app.post("/api/update-prices", upload.single('excelFile'), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ message: "No Excel file provided" });
+      }
+
+      // Create processing job
+      const job = await storage.createProcessingJob({
+        status: "processing",
+        totalImages: 0,
+        processedImages: 0,
+        totalItems: 0,
+        processedItems: 0,
+        logs: []
+      });
+
+      // Update prices asynchronously
+      const sessionId = req.sessionID;
+      updatePricesFromExcelAsync(job.id, sessionId, file).catch(error => {
+        console.error('Error updating prices:', error);
+        storage.updateProcessingJob(job.id, { status: "failed" });
+        storage.addProcessingLog(job.id, `Error: ${error instanceof Error ? error.message : String(error)}`);
+      });
+
+      res.json({ jobId: job.id });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to start price update" });
+    }
+  });
+
   // Process uploaded images (original endpoint)
   app.post("/api/process-images", upload.array('images'), async (req, res) => {
     try {
@@ -339,6 +371,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
   return httpServer;
+}
+
+async function updatePricesFromExcelAsync(jobId: string, sessionId: string, excelFile: Express.Multer.File) {
+  await storage.addProcessingLog(jobId, "Starting price update from Excel file...");
+  
+  try {
+    await storage.addProcessingLog(jobId, `Processing Excel file: ${excelFile.originalname}`);
+    
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(excelFile.buffer);
+    const worksheet = workbook.getWorksheet(1);
+    
+    if (!worksheet) {
+      throw new Error("No worksheet found in Excel file");
+    }
+
+    // Clear existing inventory first
+    await storage.clearInventory(sessionId);
+    await storage.addProcessingLog(jobId, "Cleared existing inventory for price update");
+
+    const itemNames: string[] = [];
+    const originalData: Array<{
+      name: string;
+      quantity: number;
+      row: number;
+    }> = [];
+
+    // Extract item names from column A
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) { // Skip header row
+        const itemName = row.getCell(1).value?.toString();
+        const quantity = parseInt(row.getCell(2).value?.toString() || '1');
+        
+        if (itemName) {
+          itemNames.push(itemName);
+          originalData.push({
+            name: itemName,
+            quantity,
+            row: rowNumber
+          });
+        }
+      }
+    });
+
+    await storage.updateProcessingJob(jobId, { 
+      totalItems: itemNames.length,
+      processedItems: 0 
+    });
+
+    await storage.addProcessingLog(jobId, `Found ${itemNames.length} items for price update`);
+
+    let processedCount = 0;
+    // Process each item to get market data
+    for (const itemData of originalData) {
+      try {
+        // Get market data for this item
+        const marketData = await processItemForMarket(itemData.name);
+        
+        if (marketData) {
+          // Create item in database with updated prices
+          await storage.createInventoryItem(sessionId, {
+            name: itemData.name,
+            slug: marketData.slug,
+            quantity: itemData.quantity,
+            sellPrices: marketData.sellPrices,
+            buyPrices: marketData.buyPrices,
+            avgSell: marketData.avgSell,
+            avgBuy: marketData.avgBuy,
+            marketUrl: marketData.marketUrl,
+            category: itemData.name.includes('(Чертеж)') ? 'Чертежи' : 'Prime части'
+          });
+          
+          await storage.addProcessingLog(jobId, `Updated prices for: ${itemData.name} (${marketData.avgSell} платины)`);
+        } else {
+          // Create item without market data
+          await storage.createInventoryItem(sessionId, {
+            name: itemData.name,
+            slug: null,
+            quantity: itemData.quantity,
+            sellPrices: [],
+            buyPrices: [],
+            avgSell: 0,
+            avgBuy: 0,
+            marketUrl: null,
+            category: 'Unknown'
+          });
+          
+          await storage.addProcessingLog(jobId, `Item not found in market: ${itemData.name}`);
+        }
+
+        processedCount++;
+        await storage.updateProcessingJob(jobId, { processedItems: processedCount });
+      } catch (error) {
+        await storage.addProcessingLog(jobId, `Error processing ${itemData.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    await storage.updateProcessingJob(jobId, { status: "completed" });
+    await storage.addProcessingLog(jobId, `Price update completed! Updated ${processedCount} items.`);
+    
+  } catch (error) {
+    await storage.addProcessingLog(jobId, `Error updating prices: ${error instanceof Error ? error.message : String(error)}`);
+    await storage.updateProcessingJob(jobId, { status: "failed" });
+  }
 }
 
 async function processImagesAsync(jobId: string, sessionId: string, files: Express.Multer.File[], mode: 'oneshot' | 'online' | 'edit' = 'online') {

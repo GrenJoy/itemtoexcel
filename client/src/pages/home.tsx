@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileUpload } from "@/components/file-upload";
 import { ExcelUpload } from "@/components/excel-upload";
+import { PriceUpdate } from "@/components/price-update";
 import { InventoryTable } from "@/components/inventory-table";
 import { ProcessingStatus } from "@/components/processing-status";
 import { Statistics } from "@/components/statistics";
@@ -9,13 +10,13 @@ import { Statistics } from "@/components/statistics";
 import { EditQuantityModal } from "@/components/edit-quantity-modal";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Download, Plus, FileEdit } from "lucide-react";
+import { Bot, Download, Plus, FileEdit, Trash2, RefreshCw } from "lucide-react";
 import type { InventoryItem } from "@shared/schema";
 
 export default function Home() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'oneshot' | 'edit' | 'online'>('oneshot');
+  const [activeTab, setActiveTab] = useState<'oneshot' | 'edit' | 'online' | 'price-update'>('oneshot');
   const { toast } = useToast();
 
   const { data: inventoryItems = [], isLoading: loadingInventory, refetch: refetchInventory } = useQuery({
@@ -74,6 +75,23 @@ export default function Home() {
     }
   };
 
+  const handleDeleteData = async () => {
+    try {
+      await fetch("/api/clear-inventory", { method: 'POST' });
+      refetchInventory();
+      toast({
+        title: "Данные удалены",
+        description: "Весь инвентарь был успешно очищен",
+      });
+    } catch (error) {
+      toast({
+        title: "Ошибка удаления",
+        description: "Не удалось очистить данные",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleProcessingComplete = () => {
     refetchInventory();
     // Small delay to allow user to see completion status
@@ -104,6 +122,14 @@ export default function Home() {
               >
                 <Download className="mr-2 h-4 w-4" />
                 Export Excel
+              </Button>
+              <Button 
+                onClick={handleDeleteData}
+                variant="destructive"
+                className="bg-red-600 hover:bg-red-700"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Data
               </Button>
               <div className="text-xs text-gray-400">
                 Сделано игроком GrendematriX
@@ -150,6 +176,17 @@ export default function Home() {
               <Bot className="mr-2 h-4 w-4" />
               Онлайн-редактор
             </button>
+            <button
+              onClick={() => setActiveTab('price-update')}
+              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'price-update'
+                  ? 'bg-orange-600 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Обновление цен
+            </button>
           </div>
         </div>
 
@@ -179,6 +216,14 @@ export default function Home() {
               </p>
             </div>
           )}
+          {activeTab === 'price-update' && (
+            <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+              <h3 className="font-semibold text-orange-800 dark:text-orange-200 mb-2">Обновление цен</h3>
+              <p className="text-orange-700 dark:text-orange-300 text-sm">
+                Загрузите Excel файл с названиями предметов. Система обновит цены через Warframe Market API.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Upload and Processing Section */}
@@ -192,6 +237,11 @@ export default function Home() {
           ) : activeTab === 'edit' ? (
             <ExcelUpload 
               mode="edit"
+              onJobCreated={setCurrentJobId}
+              onProcessingComplete={handleProcessingComplete}
+            />
+          ) : activeTab === 'price-update' ? (
+            <PriceUpdate
               onJobCreated={setCurrentJobId}
               onProcessingComplete={handleProcessingComplete}
             />
