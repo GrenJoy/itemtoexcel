@@ -5,11 +5,12 @@ import { useToast } from "@/hooks/use-toast";
 import { FileSpreadsheet, Upload, X, Images, Plus } from "lucide-react";
 
 interface ExcelUploadProps {
+  mode: 'edit';
   onJobCreated: (jobId: string) => void;
   onProcessingComplete: () => void;
 }
 
-export function ExcelUpload({ onJobCreated, onProcessingComplete }: ExcelUploadProps) {
+export function ExcelUpload({ mode, onJobCreated, onProcessingComplete }: ExcelUploadProps) {
   const [selectedExcelFile, setSelectedExcelFile] = useState<File | null>(null);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);

@@ -236,11 +236,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Clear inventory for oneshot and edit modes after Excel export
+  app.post("/api/clear-inventory", async (req, res) => {
+    try {
+      const sessionId = req.sessionID;
+      await storage.clearInventory(sessionId);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to clear inventory" });
+    }
+  });
+
+  // Process images in oneshot mode (auto-clear after export)
+  app.post("/api/process-oneshot", upload.array('images'), async (req, res) => {
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No images provided" });
+      }
+
+      // Create processing job
+      const job = await storage.createProcessingJob({
+        status: "processing",
+        totalImages: files.length,
+        processedImages: 0,
+        totalItems: 0,
+        processedItems: 0,
+        logs: []
+      });
+
+      // Process images asynchronously with mode 'oneshot'
+      const sessionId = req.sessionID;
+      processImagesAsync(job.id, sessionId, files, 'oneshot').catch(error => {
+        console.error('Error processing oneshot images:', error);
+        storage.updateProcessingJob(job.id, { status: "failed" });
+        storage.addProcessingLog(job.id, `Error: ${error instanceof Error ? error.message : String(error)}`);
+      });
+
+      res.json({ jobId: job.id });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to start oneshot processing" });
+    }
+  });
+
+  // Process images in online mode (keep data until page refresh)
+  app.post("/api/process-online", upload.array('images'), async (req, res) => {
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No images provided" });
+      }
+
+      // Create processing job
+      const job = await storage.createProcessingJob({
+        status: "processing",
+        totalImages: files.length,
+        processedImages: 0,
+        totalItems: 0,
+        processedItems: 0,
+        logs: []
+      });
+
+      // Process images asynchronously with mode 'online'
+      const sessionId = req.sessionID;
+      processImagesAsync(job.id, sessionId, files, 'online').catch(error => {
+        console.error('Error processing online images:', error);
+        storage.updateProcessingJob(job.id, { status: "failed" });
+        storage.addProcessingLog(job.id, `Error: ${error instanceof Error ? error.message : String(error)}`);
+      });
+
+      res.json({ jobId: job.id });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to start online processing" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
 
-async function processImagesAsync(jobId: string, sessionId: string, files: Express.Multer.File[]) {
+async function processImagesAsync(jobId: string, sessionId: string, files: Express.Multer.File[], mode: 'oneshot' | 'online' | 'edit' = 'online') {
   await storage.addProcessingLog(jobId, "Starting image analysis...");
 
   const allItemNames: string[] = [];
@@ -333,7 +408,7 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
   await storage.addProcessingLog(jobId, "Processing completed successfully!");
 }
 
-async function processImagesWithExcelAsync(jobId: string, sessionId: string, imageFiles: Express.Multer.File[], excelFile?: Express.Multer.File) {
+async function processImagesWithExcelAsync(jobId: string, sessionId: string, imageFiles: Express.Multer.File[], excelFile?: Express.Multer.File, mode: 'edit' = 'edit') {
   await storage.addProcessingLog(jobId, "Starting image analysis with Excel integration...");
 
   // Load existing Excel data if provided
@@ -415,7 +490,7 @@ async function processImagesWithExcelAsync(jobId: string, sessionId: string, ima
     await storage.addProcessingLog(jobId, "Clearing existing inventory and loading Excel data...");
     
     // Load all existing Excel data into storage
-    for (const [itemName, data] of existingData.entries()) {
+    for (const [itemName, data] of Array.from(existingData.entries())) {
       try {
         await storage.createInventoryItem(sessionId, {
           name: itemName,

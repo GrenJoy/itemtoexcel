@@ -5,11 +5,12 @@ import { useToast } from "@/hooks/use-toast";
 import { CloudUpload, Images, X } from "lucide-react";
 
 interface FileUploadProps {
+  mode: 'oneshot' | 'online';
   onJobCreated: (jobId: string) => void;
   onProcessingComplete: () => void;
 }
 
-export function FileUpload({ onJobCreated, onProcessingComplete }: FileUploadProps) {
+export function FileUpload({ mode, onJobCreated, onProcessingComplete }: FileUploadProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,7 +65,8 @@ export function FileUpload({ onJobCreated, onProcessingComplete }: FileUploadPro
         formData.append('images', file);
       });
 
-      const response = await fetch('/api/process-images', {
+      const endpoint = mode === 'oneshot' ? '/api/process-oneshot' : '/api/process-online';
+      const response = await fetch(endpoint, {
         method: 'POST',
         body: formData,
       });
@@ -97,7 +99,9 @@ export function FileUpload({ onJobCreated, onProcessingComplete }: FileUploadPro
       <CardContent className="p-6">
         <div className="flex items-center mb-4">
           <CloudUpload className="text-blue-500 mr-3 text-xl" />
-          <h2 className="text-xl font-semibold text-white">Загрузка скриншотов</h2>
+          <h2 className="text-xl font-semibold text-white">
+            {mode === 'oneshot' ? 'Одноразовая обработка' : 'Онлайн-редактирование'}
+          </h2>
         </div>
         
         {/* Drop Zone */}

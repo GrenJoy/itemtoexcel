@@ -15,7 +15,7 @@ import type { InventoryItem } from "@shared/schema";
 export default function Home() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'new' | 'excel'>('new');
+  const [activeTab, setActiveTab] = useState<'oneshot' | 'edit' | 'online'>('oneshot');
   const { toast } = useToast();
 
   const { data: inventoryItems = [], isLoading: loadingInventory, refetch: refetchInventory } = useQuery({
@@ -43,14 +43,32 @@ export default function Home() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
-      toast({
-        title: "Export successful",
-        description: "Inventory has been exported to Excel file",
-      });
+      // Auto-clear inventory for oneshot and edit modes
+      if (activeTab === 'oneshot' || activeTab === 'edit') {
+        try {
+          await fetch("/api/clear-inventory", { method: 'POST' });
+          refetchInventory();
+          toast({
+            title: "Export successful",
+            description: "Excel файл скачан и данные очищены",
+          });
+        } catch (clearError) {
+          toast({
+            title: "Export successful but clear failed",
+            description: "Excel файл скачан, но данные не очищены",
+            variant: "destructive",
+          });
+        }
+      } else {
+        toast({
+          title: "Export successful",
+          description: "Excel файл успешно скачан",
+        });
+      }
     } catch (error) {
       toast({
         title: "Export failed",
-        description: "Failed to export inventory to Excel",
+        description: "Ошибка при экспорте Excel файла",
         variant: "destructive",
       });
     }
@@ -98,22 +116,22 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Tab Navigation */}
         <div className="mb-8">
-          <div className="flex space-x-1 bg-gray-800 p-1 rounded-lg max-w-md">
+          <div className="flex space-x-1 bg-gray-800 p-1 rounded-lg max-w-2xl">
             <button
-              onClick={() => setActiveTab('new')}
-              className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === 'new'
+              onClick={() => setActiveTab('oneshot')}
+              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'oneshot'
                   ? 'bg-blue-600 text-white'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700'
               }`}
             >
               <Plus className="mr-2 h-4 w-4" />
-              Новый инвентарь
+              Одноразовая
             </button>
             <button
-              onClick={() => setActiveTab('excel')}
-              className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === 'excel'
+              onClick={() => setActiveTab('edit')}
+              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'edit'
                   ? 'bg-green-600 text-white'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700'
               }`}
@@ -121,18 +139,65 @@ export default function Home() {
               <FileEdit className="mr-2 h-4 w-4" />
               Редактировать Excel
             </button>
+            <button
+              onClick={() => setActiveTab('online')}
+              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'online'
+                  ? 'bg-purple-600 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              <Bot className="mr-2 h-4 w-4" />
+              Онлайн-редактор
+            </button>
           </div>
+        </div>
+
+        {/* Mode Descriptions */}
+        <div className="mb-6">
+          {activeTab === 'oneshot' && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">Одноразовая обработка</h3>
+              <p className="text-blue-700 dark:text-blue-300 text-sm">
+                Загружайте скриншоты, получайте Excel файл, скачивайте и всё очищается. Уникальные данные для каждого пользователя.
+              </p>
+            </div>
+          )}
+          {activeTab === 'edit' && (
+            <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+              <h3 className="font-semibold text-green-800 dark:text-green-200 mb-2">Редактирование Excel</h3>
+              <p className="text-green-700 dark:text-green-300 text-sm">
+                Загрузите существующий Excel файл + новые скриншоты. После скачивания всё очищается.
+              </p>
+            </div>
+          )}
+          {activeTab === 'online' && (
+            <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+              <h3 className="font-semibold text-purple-800 dark:text-purple-200 mb-2">Онлайн-редактирование</h3>
+              <p className="text-purple-700 dark:text-purple-300 text-sm">
+                Постоянное добавление скриншотов. Данные сохраняются до обновления страницы. Можно скачивать несколько раз.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Upload and Processing Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {activeTab === 'new' ? (
+          {activeTab === 'oneshot' ? (
             <FileUpload 
+              mode="oneshot"
+              onJobCreated={setCurrentJobId}
+              onProcessingComplete={handleProcessingComplete}
+            />
+          ) : activeTab === 'edit' ? (
+            <ExcelUpload 
+              mode="edit"
               onJobCreated={setCurrentJobId}
               onProcessingComplete={handleProcessingComplete}
             />
           ) : (
-            <ExcelUpload 
+            <FileUpload 
+              mode="online"
               onJobCreated={setCurrentJobId}
               onProcessingComplete={handleProcessingComplete}
             />
