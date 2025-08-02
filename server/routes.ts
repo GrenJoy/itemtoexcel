@@ -13,6 +13,14 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
+// Cache for split files
+const splitFileCache = new Map<string, {
+  lowPriceFile: Buffer;
+  highPriceFile: Buffer;
+  lowCount: number;
+  highCount: number;
+}>();
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize Warframe Market cache
   try {
@@ -125,6 +133,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ jobId: job.id });
     } catch (error) {
       res.status(500).json({ message: "Failed to start price update" });
+    }
+  });
+
+  // Split Excel file by price
+  app.post("/api/split-excel", upload.single('excelFile'), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ message: "No Excel file provided" });
+      }
+
+      // Create processing job
+      const job = await storage.createProcessingJob({
+        status: "processing",
+        totalImages: 0,
+        processedImages: 0,
+        totalItems: 0,
+        processedItems: 0,
+        logs: []
+      });
+
+      // Split Excel asynchronously
+      const sessionId = req.sessionID;
+      splitExcelByPriceAsync(job.id, sessionId, file).catch(error => {
+        console.error('Error splitting Excel:', error);
+        storage.updateProcessingJob(job.id, { status: "failed" });
+        storage.addProcessingLog(job.id, `Error: ${error instanceof Error ? error.message : String(error)}`);
+      });
+
+      res.json({ jobId: job.id });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to start Excel split" });
+    }
+  });
+
+  // Download split files
+  app.get("/api/download-split/:type", async (req, res) => {
+    try {
+      const { type } = req.params;
+      const sessionId = req.sessionID;
+      
+      if (type !== 'low' && type !== 'high') {
+        return res.status(400).json({ message: "Invalid file type" });
+      }
+      
+      const splitFiles = splitFileCache.get(sessionId);
+      if (!splitFiles) {
+        return res.status(404).json({ message: "Split files not found" });
+      }
+      
+      const fileBuffer = type === 'low' ? splitFiles.lowPriceFile : splitFiles.highPriceFile;
+      if (!fileBuffer) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      const filename = type === 'low' 
+        ? 'warframe_inventory_low_price.xlsx'
+        : 'warframe_inventory_high_price.xlsx';
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(fileBuffer);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to download split file" });
     }
   });
 
@@ -473,6 +545,103 @@ async function updatePricesFromExcelAsync(jobId: string, sessionId: string, exce
     
   } catch (error) {
     await storage.addProcessingLog(jobId, `Error updating prices: ${error instanceof Error ? error.message : String(error)}`);
+    await storage.updateProcessingJob(jobId, { status: "failed" });
+  }
+}
+
+async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFile: Express.Multer.File) {
+  await storage.addProcessingLog(jobId, "Starting Excel split by price...");
+  
+  try {
+    await storage.addProcessingLog(jobId, `Processing Excel file: ${excelFile.originalname}`);
+    
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(excelFile.buffer);
+    const worksheet = workbook.getWorksheet(1);
+    
+    if (!worksheet) {
+      throw new Error("No worksheet found in Excel file");
+    }
+
+    // Create two new workbooks for low and high prices
+    const lowPriceWorkbook = new ExcelJS.Workbook();
+    const highPriceWorkbook = new ExcelJS.Workbook();
+    
+    const lowPriceWorksheet = lowPriceWorkbook.addWorksheet('Low Price Items');
+    const highPriceWorksheet = highPriceWorkbook.addWorksheet('High Price Items');
+
+    // Copy header row to both worksheets
+    const headerRow = worksheet.getRow(1);
+    const headerValues: any[] = [];
+    headerRow.eachCell((cell) => {
+      headerValues.push(cell.value);
+    });
+    
+    lowPriceWorksheet.addRow(headerValues);
+    highPriceWorksheet.addRow(headerValues);
+
+    let lowPriceCount = 0;
+    let highPriceCount = 0;
+    let totalRows = 0;
+
+    // Process each row (skip header)
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        totalRows++;
+        const priceCell = row.getCell(4); // Column D (price column)
+        const priceValue = priceCell.value;
+        
+        // Extract first number from price cell
+        let firstPrice = 0;
+        if (priceValue) {
+          const priceStr = priceValue.toString();
+          const priceMatch = priceStr.match(/^\d+/);
+          if (priceMatch) {
+            firstPrice = parseInt(priceMatch[0]);
+          }
+        }
+        
+        // Copy entire row values
+        const rowValues: any[] = [];
+        row.eachCell((cell, colNumber) => {
+          rowValues[colNumber - 1] = cell.value;
+        });
+        
+        // Add to appropriate worksheet based on price
+        if (firstPrice <= 11) {
+          lowPriceWorksheet.addRow(rowValues);
+          lowPriceCount++;
+        } else {
+          highPriceWorksheet.addRow(rowValues);
+          highPriceCount++;
+        }
+      }
+    });
+
+    await storage.updateProcessingJob(jobId, { 
+      totalItems: totalRows,
+      processedItems: totalRows 
+    });
+
+    await storage.addProcessingLog(jobId, `Split completed: ${lowPriceCount} low price items, ${highPriceCount} high price items`);
+
+    // Generate Excel buffers
+    const lowPriceBuffer = await lowPriceWorkbook.xlsx.writeBuffer();
+    const highPriceBuffer = await highPriceWorkbook.xlsx.writeBuffer();
+
+    // Cache the split files
+    splitFileCache.set(sessionId, {
+      lowPriceFile: Buffer.from(lowPriceBuffer),
+      highPriceFile: Buffer.from(highPriceBuffer),
+      lowCount: lowPriceCount,
+      highCount: highPriceCount
+    });
+
+    await storage.updateProcessingJob(jobId, { status: "completed" });
+    await storage.addProcessingLog(jobId, `Excel split completed! Ready to download split files.`);
+    
+  } catch (error) {
+    await storage.addProcessingLog(jobId, `Error splitting Excel: ${error instanceof Error ? error.message : String(error)}`);
     await storage.updateProcessingJob(jobId, { status: "failed" });
   }
 }

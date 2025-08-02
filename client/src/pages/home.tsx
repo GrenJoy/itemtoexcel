@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FileUpload } from "@/components/file-upload";
 import { ExcelUpload } from "@/components/excel-upload";
 import { PriceUpdate } from "@/components/price-update";
+import { ExcelSplit } from "@/components/excel-split";
 import { InventoryTable } from "@/components/inventory-table";
 import { ProcessingStatus } from "@/components/processing-status";
 import { Statistics } from "@/components/statistics";
@@ -10,13 +11,13 @@ import { Statistics } from "@/components/statistics";
 import { EditQuantityModal } from "@/components/edit-quantity-modal";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Download, Plus, FileEdit, Trash2, RefreshCw } from "lucide-react";
+import { Bot, Download, Plus, FileEdit, Trash2, RefreshCw, Split } from "lucide-react";
 import type { InventoryItem } from "@shared/schema";
 
 export default function Home() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'oneshot' | 'edit' | 'online' | 'price-update'>('oneshot');
+  const [activeTab, setActiveTab] = useState<'oneshot' | 'edit' | 'online' | 'price-update' | 'split'>('oneshot');
   const { toast } = useToast();
 
   const { data: inventoryItems = [], isLoading: loadingInventory, refetch: refetchInventory } = useQuery({
@@ -187,6 +188,17 @@ export default function Home() {
               <RefreshCw className="mr-2 h-4 w-4" />
               Обновление цен
             </button>
+            <button
+              onClick={() => setActiveTab('split')}
+              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'split'
+                  ? 'bg-teal-600 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              <Split className="mr-2 h-4 w-4" />
+              Разделение
+            </button>
           </div>
         </div>
 
@@ -224,6 +236,14 @@ export default function Home() {
               </p>
             </div>
           )}
+          {activeTab === 'split' && (
+            <div className="bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800 rounded-lg p-4">
+              <h3 className="font-semibold text-teal-800 dark:text-teal-200 mb-2">Разделение по цене</h3>
+              <p className="text-teal-700 dark:text-teal-300 text-sm">
+                Загрузите Excel файл. Предметы от 12 платины перейдут в отдельный файл, до 11 платины останутся в основном.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Upload and Processing Section */}
@@ -242,6 +262,11 @@ export default function Home() {
             />
           ) : activeTab === 'price-update' ? (
             <PriceUpdate
+              onJobCreated={setCurrentJobId}
+              onProcessingComplete={handleProcessingComplete}
+            />
+          ) : activeTab === 'split' ? (
+            <ExcelSplit
               onJobCreated={setCurrentJobId}
               onProcessingComplete={handleProcessingComplete}
             />

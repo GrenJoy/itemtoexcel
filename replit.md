@@ -2,7 +2,13 @@
 
 This is a full-stack web application for analyzing Warframe game inventory screenshots using AI image recognition. The application allows users to upload multiple inventory screenshots, processes them using Google's Gemini AI to extract item names, and then integrates with the Warframe Market API to fetch current market prices. Users can manage their inventory with CRUD operations and export data to Excel format.
 
-**Key Feature Update (January 2025)**: Added Excel file editing capability. Users can now upload existing Excel files and add new screenshots to update their inventory. The system merges new items and increments quantities for existing items, maintaining all market data and allowing continuous inventory management without creating new files each time.
+**Key Feature Update (January 2025)**: Added Excel file editing capability and advanced processing modes. Users can now:
+- Upload existing Excel files and add new screenshots to update inventory
+- Update market prices from Excel files via Warframe Market API (4th mode)
+- Split Excel files by price threshold (5th mode: items ≤11 vs ≥12 platinum)
+- Delete all inventory data with one-click
+- Merge new items and increment quantities for existing items
+All modes maintain market data integrity and support continuous inventory management.
 
 The application features a modern React frontend with shadcn/ui components and a Node.js/Express backend with PostgreSQL database storage using Drizzle ORM.
 
