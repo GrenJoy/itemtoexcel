@@ -1,0 +1,290 @@
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { insertInventoryItemSchema, updateQuantitySchema, type ProcessImageRequest, type ProcessImageResponse } from "@shared/schema";
+import { analyzeInventoryImage } from "./services/gemini";
+import { processItemForMarket, loadItemsCache } from "./services/warframe-market";
+import multer from "multer";
+import ExcelJS from "exceljs";
+import { z } from "zod";
+
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Initialize Warframe Market cache
+  try {
+    await loadItemsCache();
+  } catch (error) {
+    console.error('Failed to initialize Warframe Market cache:', error);
+  }
+
+  // Get all inventory items
+  app.get("/api/inventory", async (req, res) => {
+    try {
+      const items = await storage.getInventoryItems();
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch inventory items" });
+    }
+  });
+
+  // Process uploaded images
+  app.post("/api/process-images", upload.array('images'), async (req, res) => {
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No images provided" });
+      }
+
+      // Create processing job
+      const job = await storage.createProcessingJob({
+        status: "processing",
+        totalImages: files.length,
+        processedImages: 0,
+        totalItems: 0,
+        processedItems: 0,
+        logs: []
+      });
+
+      // Process images asynchronously
+      processImagesAsync(job.id, files).catch(error => {
+        console.error('Error processing images:', error);
+        storage.updateProcessingJob(job.id, { status: "failed" });
+        storage.addProcessingLog(job.id, `Error: ${error.message}`);
+      });
+
+      res.json({ jobId: job.id });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to start image processing" });
+    }
+  });
+
+  // Get processing job status
+  app.get("/api/processing/:jobId", async (req, res) => {
+    try {
+      const job = await storage.getProcessingJob(req.params.jobId);
+      if (!job) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+      res.json(job);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch job status" });
+    }
+  });
+
+  // Update item quantity
+  app.patch("/api/inventory/:id/quantity", async (req, res) => {
+    try {
+      const validation = updateQuantitySchema.safeParse({
+        id: req.params.id,
+        quantity: req.body.quantity
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({ message: "Invalid request data" });
+      }
+
+      const updated = await storage.updateInventoryItemQuantity(validation.data);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update item quantity" });
+    }
+  });
+
+  // Delete inventory item
+  app.delete("/api/inventory/:id", async (req, res) => {
+    try {
+      await storage.deleteInventoryItem(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete item" });
+    }
+  });
+
+  // Export to Excel
+  app.get("/api/export/excel", async (req, res) => {
+    try {
+      const items = await storage.getInventoryItems();
+      
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Warframe Inventory');
+
+      // Add headers
+      worksheet.addRow([
+        'Название',
+        'Количество', 
+        'Slug',
+        'Цены продажи',
+        'Цены покупки',
+        'Средняя продажа',
+        'Средняя покупка',
+        'Ссылка'
+      ]);
+
+      // Add data
+      for (const item of items) {
+        worksheet.addRow([
+          item.name,
+          item.quantity,
+          item.slug || 'НЕ НАЙДЕН',
+          item.sellPrices?.join(', ') || 'Нет',
+          item.buyPrices?.join(', ') || 'Нет',
+          item.avgSell || 0,
+          item.avgBuy || 0,
+          item.marketUrl || 'N/A'
+        ]);
+      }
+
+      // Style headers
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1e3a8a' }
+      };
+
+      // Auto-size columns
+      worksheet.columns.forEach((column, index) => {
+        if (column) {
+          let maxLength = 0;
+          column.eachCell?.({ includeEmpty: true }, (cell) => {
+            const columnLength = cell.value ? cell.value.toString().length : 10;
+            if (columnLength > maxLength) {
+              maxLength = columnLength;
+            }
+          });
+          column.width = maxLength < 10 ? 10 : maxLength + 2;
+        }
+      });
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=warframe_inventory.xlsx');
+
+      await workbook.xlsx.write(res);
+      res.end();
+    } catch (error) {
+      console.error('Excel export error:', error);
+      res.status(500).json({ message: "Failed to export Excel file" });
+    }
+  });
+
+  // Get inventory statistics
+  app.get("/api/inventory/stats", async (req, res) => {
+    try {
+      const items = await storage.getInventoryItems();
+      
+      const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+      const totalValue = items.reduce((sum, item) => sum + ((item.avgSell || 0) * item.quantity), 0);
+      const avgPrice = totalItems > 0 ? totalValue / totalItems : 0;
+
+      res.json({
+        totalItems,
+        totalValue: Math.round(totalValue * 100) / 100,
+        avgPrice: Math.round(avgPrice * 100) / 100,
+        uniqueItems: items.length
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to calculate statistics" });
+    }
+  });
+
+  const httpServer = createServer(app);
+  return httpServer;
+}
+
+async function processImagesAsync(jobId: string, files: Express.Multer.File[]) {
+  await storage.addProcessingLog(jobId, "Starting image analysis...");
+
+  const allItemNames: string[] = [];
+
+  // Process each image
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    await storage.addProcessingLog(jobId, `Analyzing image ${i + 1}/${files.length}: ${file.originalname}`);
+
+    try {
+      const base64Image = file.buffer.toString('base64');
+      const items = await analyzeInventoryImage(base64Image);
+      allItemNames.push(...items);
+
+      await storage.updateProcessingJob(jobId, { processedImages: i + 1 });
+      await storage.addProcessingLog(jobId, `Found ${items.length} items in ${file.originalname}`);
+    } catch (error) {
+      await storage.addProcessingLog(jobId, `Error analyzing ${file.originalname}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // Count item quantities
+  const itemCounts = new Map<string, number>();
+  for (const itemName of allItemNames) {
+    itemCounts.set(itemName, (itemCounts.get(itemName) || 0) + 1);
+  }
+
+  await storage.updateProcessingJob(jobId, { 
+    totalItems: itemCounts.size,
+    processedItems: 0 
+  });
+
+  await storage.addProcessingLog(jobId, `Processing ${itemCounts.size} unique items...`);
+
+  let processedCount = 0;
+  // Process each unique item
+  for (const [itemName, quantity] of Array.from(itemCounts.entries())) {
+    try {
+      // Check if item already exists
+      const existingItem = await storage.findInventoryItemByName(itemName);
+      
+      if (existingItem) {
+        // Update quantity
+        await storage.updateInventoryItemQuantity({
+          id: existingItem.id,
+          quantity: existingItem.quantity + quantity
+        });
+        await storage.addProcessingLog(jobId, `Updated quantity for: ${itemName} (+${quantity})`);
+      } else {
+        // Get market data and create new item
+        const marketData = await processItemForMarket(itemName);
+        
+        if (marketData) {
+          await storage.createInventoryItem({
+            name: itemName,
+            slug: marketData.slug,
+            quantity,
+            sellPrices: marketData.sellPrices,
+            buyPrices: marketData.buyPrices,
+            avgSell: marketData.avgSell,
+            avgBuy: marketData.avgBuy,
+            marketUrl: marketData.marketUrl,
+            category: itemName.includes('(Чертеж)') ? 'Чертежи' : 'Prime части'
+          });
+          await storage.addProcessingLog(jobId, `Added new item: ${itemName} (${quantity}x)`);
+        } else {
+          await storage.createInventoryItem({
+            name: itemName,
+            slug: null,
+            quantity,
+            sellPrices: [],
+            buyPrices: [],
+            avgSell: 0,
+            avgBuy: 0,
+            marketUrl: null,
+            category: 'Unknown'
+          });
+          await storage.addProcessingLog(jobId, `Added item (not found in market): ${itemName} (${quantity}x)`);
+        }
+      }
+
+      processedCount++;
+      await storage.updateProcessingJob(jobId, { processedItems: processedCount });
+    } catch (error) {
+      await storage.addProcessingLog(jobId, `Error processing ${itemName}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  await storage.updateProcessingJob(jobId, { status: "completed" });
+  await storage.addProcessingLog(jobId, "Processing completed successfully!");
+}
