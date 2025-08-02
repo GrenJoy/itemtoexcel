@@ -4,7 +4,7 @@ import { FileUpload } from "@/components/file-upload";
 import { ExcelUpload } from "@/components/excel-upload";
 import { PriceUpdate } from "@/components/price-update";
 import { ExcelSplit } from "@/components/excel-split";
-import { OnlineEditor } from "@/components/online-editor";
+
 import { InventoryTable } from "@/components/inventory-table";
 import { ProcessingStatus } from "@/components/processing-status";
 import { Statistics } from "@/components/statistics";
@@ -272,7 +272,8 @@ export default function Home() {
               onProcessingComplete={handleProcessingComplete}
             />
           ) : (
-            <OnlineEditor
+            <FileUpload 
+              mode="online"
               onJobCreated={setCurrentJobId}
               onProcessingComplete={handleProcessingComplete}
             />
