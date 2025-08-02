@@ -10,6 +10,7 @@ export interface IStorage {
   updateInventoryItemQuantity(update: UpdateQuantity): Promise<InventoryItem>;
   deleteInventoryItem(id: string): Promise<void>;
   findInventoryItemByName(name: string): Promise<InventoryItem | undefined>;
+  clearInventory(): Promise<void>;
   
   // Processing Jobs
   getProcessingJob(id: string): Promise<ProcessingJob | undefined>;
@@ -120,6 +121,10 @@ export class MemStorage implements IStorage {
     logs.push(`${new Date().toLocaleTimeString()}: ${log}`);
     const updated: ProcessingJob = { ...existing, logs };
     this.processingJobs.set(id, updated);
+  }
+
+  async clearInventory(): Promise<void> {
+    this.inventoryItems.clear();
   }
 }
 

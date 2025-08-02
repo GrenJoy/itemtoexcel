@@ -2,6 +2,8 @@
 
 This is a full-stack web application for analyzing Warframe game inventory screenshots using AI image recognition. The application allows users to upload multiple inventory screenshots, processes them using Google's Gemini AI to extract item names, and then integrates with the Warframe Market API to fetch current market prices. Users can manage their inventory with CRUD operations and export data to Excel format.
 
+**Key Feature Update (January 2025)**: Added Excel file editing capability. Users can now upload existing Excel files and add new screenshots to update their inventory. The system merges new items and increments quantities for existing items, maintaining all market data and allowing continuous inventory management without creating new files each time.
+
 The application features a modern React frontend with shadcn/ui components and a Node.js/Express backend with PostgreSQL database storage using Drizzle ORM.
 
 # User Preferences
@@ -47,6 +49,8 @@ Preferred communication style: Simple, everyday language.
 - **Processing Flow**: Async job-based processing with status tracking
 - **File Constraints**: 10MB file size limit, JPEG/PNG support
 - **Error Recovery**: Comprehensive error handling and logging for failed operations
+- **Excel Integration**: Support for uploading existing Excel files and merging with new screenshot data
+- **Dual Processing Modes**: New inventory creation and existing inventory editing workflows
 
 ## Market Data Integration
 - **External API**: Warframe Market v2 API integration
@@ -55,9 +59,11 @@ Preferred communication style: Simple, everyday language.
 - **Normalization**: String normalization for accurate item matching between game and market data
 
 ## Export Functionality
-- **Format**: Excel (.xlsx) export using ExcelJS library
+- **Format**: Excel (.xlsx) export using ExcelJS library  
 - **Data Scope**: Complete inventory with market pricing data
 - **Download Mechanism**: Browser-based file download with proper MIME types
+- **Import Capability**: Excel file upload and parsing for existing inventory management
+- **Merge Logic**: Automatic quantity addition for existing items, new item creation for unknowns
 
 ## Development Features
 - **Hot Reload**: Vite HMR for rapid development

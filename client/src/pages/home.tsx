@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileUpload } from "@/components/file-upload";
+import { ExcelUpload } from "@/components/excel-upload";
 import { InventoryTable } from "@/components/inventory-table";
 import { ProcessingStatus } from "@/components/processing-status";
 import { Statistics } from "@/components/statistics";
@@ -8,13 +9,14 @@ import { APIKeyModal } from "@/components/api-key-modal";
 import { EditQuantityModal } from "@/components/edit-quantity-modal";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Download, Settings } from "lucide-react";
+import { Bot, Download, Settings, Plus, FileEdit } from "lucide-react";
 import type { InventoryItem } from "@shared/schema";
 
 export default function Home() {
   const [showAPIModal, setShowAPIModal] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'new' | 'excel'>('new');
   const { toast } = useToast();
 
   const { data: inventoryItems = [], isLoading: loadingInventory, refetch: refetchInventory } = useQuery({
@@ -97,12 +99,47 @@ export default function Home() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Tab Navigation */}
+        <div className="mb-8">
+          <div className="flex space-x-1 bg-gray-800 p-1 rounded-lg max-w-md">
+            <button
+              onClick={() => setActiveTab('new')}
+              className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'new'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Новый инвентарь
+            </button>
+            <button
+              onClick={() => setActiveTab('excel')}
+              className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'excel'
+                  ? 'bg-green-600 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              <FileEdit className="mr-2 h-4 w-4" />
+              Редактировать Excel
+            </button>
+          </div>
+        </div>
+
         {/* Upload and Processing Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          <FileUpload 
-            onJobCreated={setCurrentJobId}
-            onProcessingComplete={handleProcessingComplete}
-          />
+          {activeTab === 'new' ? (
+            <FileUpload 
+              onJobCreated={setCurrentJobId}
+              onProcessingComplete={handleProcessingComplete}
+            />
+          ) : (
+            <ExcelUpload 
+              onJobCreated={setCurrentJobId}
+              onProcessingComplete={handleProcessingComplete}
+            />
+          )}
           <ProcessingStatus 
             jobId={currentJobId}
             onComplete={handleProcessingComplete}

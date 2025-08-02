@@ -55,6 +55,15 @@ export interface ProcessImageResponse {
   jobId: string;
 }
 
+export interface ProcessWithExcelRequest {
+  images: string[]; // base64 encoded images
+  excelFile: string; // base64 encoded Excel file
+}
+
+export interface ProcessWithExcelResponse {
+  jobId: string;
+}
+
 export interface WarframeMarketItem {
   slug: string;
   name: string;
