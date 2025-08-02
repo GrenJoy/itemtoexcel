@@ -194,7 +194,7 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
                 className="flex items-center justify-center bg-green-900/20 border-green-600 text-green-400 hover:bg-green-900/30"
               >
                 <Download className="mr-2 h-4 w-4" />
-                До 11 платины
+                До 10 платины
                 {splitResults.lowCount && (
                   <span className="ml-1 text-xs">({splitResults.lowCount})</span>
                 )}
@@ -206,7 +206,7 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
                 className="flex items-center justify-center bg-red-900/20 border-red-600 text-red-400 hover:bg-red-900/30"
               >
                 <Download className="mr-2 h-4 w-4" />
-                От 12 платины
+                От 11 платины
                 {splitResults.highCount && (
                   <span className="ml-1 text-xs">({splitResults.highCount})</span>
                 )}
@@ -219,7 +219,7 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
           <p className="font-medium mb-1">Как это работает:</p>
           <ul className="space-y-1 text-gray-400">
             <li>• Загрузите Excel файл с ценами в столбце D</li>
-            <li>• Система разделит предметы: до 11 платины и от 12 платины</li>
+            <li>• Система разделит предметы: до 10 платины и от 11 платины</li>
             <li>• Каждый файл будет сжат без пустых строк</li>
             <li>• Скачайте оба файла отдельно</li>
           </ul>

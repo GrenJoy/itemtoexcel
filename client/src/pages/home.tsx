@@ -4,6 +4,7 @@ import { FileUpload } from "@/components/file-upload";
 import { ExcelUpload } from "@/components/excel-upload";
 import { PriceUpdate } from "@/components/price-update";
 import { ExcelSplit } from "@/components/excel-split";
+import { OnlineEditor } from "@/components/online-editor";
 import { InventoryTable } from "@/components/inventory-table";
 import { ProcessingStatus } from "@/components/processing-status";
 import { Statistics } from "@/components/statistics";
@@ -240,7 +241,7 @@ export default function Home() {
             <div className="bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800 rounded-lg p-4">
               <h3 className="font-semibold text-teal-800 dark:text-teal-200 mb-2">Разделение по цене</h3>
               <p className="text-teal-700 dark:text-teal-300 text-sm">
-                Загрузите Excel файл. Предметы от 12 платины перейдут в отдельный файл, до 11 платины останутся в основном.
+                Загрузите Excel файл. Предметы от 11 платины перейдут в отдельный файл, до 10 платины останутся в основном.
               </p>
             </div>
           )}
@@ -271,8 +272,7 @@ export default function Home() {
               onProcessingComplete={handleProcessingComplete}
             />
           ) : (
-            <FileUpload 
-              mode="online"
+            <OnlineEditor
               onJobCreated={setCurrentJobId}
               onProcessingComplete={handleProcessingComplete}
             />

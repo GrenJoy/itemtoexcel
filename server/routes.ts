@@ -608,7 +608,7 @@ async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFil
         });
         
         // Add to appropriate worksheet based on price
-        if (firstPrice <= 11) {
+        if (firstPrice <= 10) {
           lowPriceWorksheet.addRow(rowValues);
           lowPriceCount++;
         } else {
