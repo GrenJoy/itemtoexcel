@@ -409,26 +409,31 @@ async function processImagesWithExcelAsync(jobId: string, sessionId: string, ima
 
   await storage.addProcessingLog(jobId, `Processing ${itemCounts.size} unique items...`);
 
-  // Clear existing inventory data from storage
-  await storage.clearInventory(sessionId);
-  
-  // First, load all existing Excel data into storage
-  for (const [itemName, data] of existingData.entries()) {
-    try {
-      await storage.createInventoryItem(sessionId, {
-        name: itemName,
-        slug: data.slug === 'НЕ НАЙДЕН' ? null : data.slug,
-        quantity: data.quantity,
-        sellPrices: data.sellPrices,
-        buyPrices: data.buyPrices,
-        avgSell: data.avgSell,
-        avgBuy: data.avgBuy,
-        marketUrl: data.marketUrl === 'N/A' ? null : data.marketUrl,
-        category: itemName.includes('(Чертеж)') ? 'Чертежи' : 'Prime части'
-      });
-    } catch (error) {
-      await storage.addProcessingLog(jobId, `Error loading existing item ${itemName}: ${error instanceof Error ? error.message : String(error)}`);
+  // Only clear and reload Excel data if Excel file was provided
+  if (excelFile) {
+    await storage.clearInventory(sessionId);
+    await storage.addProcessingLog(jobId, "Clearing existing inventory and loading Excel data...");
+    
+    // Load all existing Excel data into storage
+    for (const [itemName, data] of existingData.entries()) {
+      try {
+        await storage.createInventoryItem(sessionId, {
+          name: itemName,
+          slug: data.slug === 'НЕ НАЙДЕН' ? null : data.slug,
+          quantity: data.quantity,
+          sellPrices: data.sellPrices,
+          buyPrices: data.buyPrices,
+          avgSell: data.avgSell,
+          avgBuy: data.avgBuy,
+          marketUrl: data.marketUrl === 'N/A' ? null : data.marketUrl,
+          category: itemName.includes('(Чертеж)') ? 'Чертежи' : 'Prime части'
+        });
+      } catch (error) {
+        await storage.addProcessingLog(jobId, `Error loading existing item ${itemName}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
+  } else {
+    await storage.addProcessingLog(jobId, "Adding new items to existing inventory...");
   }
 
   let processedCount = 0;
