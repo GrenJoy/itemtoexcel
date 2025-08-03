@@ -3,27 +3,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { FileSpreadsheet, Upload, X, Split, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 
 interface ExcelSplitProps {
-  onJobCreated: (jobId: string) => void;
-  onProcessingComplete: () => void;
+  onJobCreated?: (jobId: string) => void;
+  onProcessingComplete?: () => void;
 }
 
 export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitProps) {
   const [selectedExcelFile, setSelectedExcelFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [splitResults, setSplitResults] = useState<{
-    lowPriceFile?: string;
-    highPriceFile?: string;
-    lowCount?: number;
-    highCount?: number;
+    lowPriceData: any[];
+    highPriceData: any[];
+    lowCount: number;
+    highCount: number;
   } | null>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const handleExcelSelect = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    
+
     const file = files[0];
     if (!file.name.toLowerCase().endsWith('.xlsx') && !file.name.toLowerCase().endsWith('.xls')) {
       toast({
@@ -33,7 +34,7 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
       });
       return;
     }
-    
+
     setSelectedExcelFile(file);
     setSplitResults(null);
   };
@@ -53,66 +54,87 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
       return;
     }
 
-    setUploading(true);
+    setProcessing(true);
     try {
-      const formData = new FormData();
-      formData.append('excelFile', selectedExcelFile);
+      const arrayBuffer = await selectedExcelFile.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet);
 
-      const response = await fetch('/api/split-excel', {
-        method: 'POST',
-        body: formData,
+      const lowPriceData: any[] = [];
+      const highPriceData: any[] = [];
+
+      data.forEach((row: any) => {
+        const pricesStr = row['Цены продажи'] || '';
+        const prices = pricesStr.split(',').map(p => parseFloat(p.trim()) || 0).filter(p => !isNaN(p));
+
+        if (prices.length === 0) {
+          lowPriceData.push(row); // Если нет цен, в низкие
+          return;
+        }
+
+        const lowCount = prices.filter(p => p <= 10).length;
+        const highCount = prices.filter(p => p >= 11).length;
+        const totalCount = prices.length;
+        const threshold = Math.ceil(totalCount * 0.6); // 60% для большинства
+
+        if (lowCount >= threshold) {
+          lowPriceData.push(row);
+        } else if (highCount >= threshold) {
+          highPriceData.push(row);
+        } else {
+          // Если ни один критерий не выполнен (например, 50/50), в низкие
+          lowPriceData.push(row);
+        }
       });
 
-      if (!response.ok) {
-        throw new Error('Excel split failed');
-      }
+      setSplitResults({
+        lowPriceData,
+        highPriceData,
+        lowCount: lowPriceData.length,
+        highCount: highPriceData.length,
+      });
 
-      const data = await response.json();
-      onJobCreated(data.jobId);
-      setSplitResults(data.results);
-      
+      if (onJobCreated) onJobCreated(Date.now().toString());
+      if (onProcessingComplete) onProcessingComplete();
+
       toast({
-        title: "Разделение начато",
-        description: "Разделяем Excel файл по цене (до 11 и от 12 платины)...",
+        title: "Разделение завершено",
+        description: `Файл разделен: ${lowPriceData.length} предметов до 10 платины, ${highPriceData.length} предметов от 11 платины`,
       });
     } catch (error) {
+      console.error(error);
       toast({
         title: "Ошибка разделения",
         description: "Не удалось разделить Excel файл",
         variant: "destructive",
       });
     } finally {
-      setUploading(false);
+      setProcessing(false);
     }
   };
 
-  const downloadFile = async (fileType: 'low' | 'high') => {
+  const downloadFile = (fileType: 'low' | 'high') => {
+    if (!splitResults) return;
+
     try {
-      const response = await fetch(`/api/download-split/${fileType}`);
-      if (!response.ok) {
-        throw new Error('Download failed');
-      }
-      
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileType === 'low' 
-        ? "warframe_inventory_low_price.xlsx"
-        : "warframe_inventory_high_price.xlsx";
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
+      const data = fileType === 'low' ? splitResults.lowPriceData : splitResults.highPriceData;
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(workbook, worksheet, fileType === 'low' ? 'Low Price' : 'High Price');
+
+      XLSX.writeFile(workbook, fileType === 'low' ? 'warframe_inventory_low_price.xlsx' : 'warframe_inventory_high_price.xlsx');
+
       toast({
         title: "Файл скачан",
         description: `${fileType === 'low' ? 'Низкие цены' : 'Высокие цены'} файл успешно скачан`,
       });
     } catch (error) {
+      console.error(error);
       toast({
         title: "Ошибка скачивания",
-        description: "Не удалось скачать файл",
+        description: "Не удалось создать или скачать файл",
         variant: "destructive",
       });
     }
@@ -127,7 +149,6 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Excel File Upload */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-medium text-gray-300">Выберите Excel файл</h3>
@@ -136,13 +157,13 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
               size="sm"
               onClick={() => excelInputRef.current?.click()}
               className="border-gray-600 hover:bg-gray-700"
-              disabled={uploading}
+              disabled={processing}
             >
               <Upload className="mr-2 h-4 w-4" />
               Выбрать Excel
             </Button>
           </div>
-          
+
           {selectedExcelFile ? (
             <div className="flex items-center justify-between bg-gray-700 rounded-lg p-3">
               <div className="flex items-center">
@@ -163,7 +184,7 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
               <p className="text-sm text-gray-400">Excel файл не выбран</p>
             </div>
           )}
-          
+
           <input
             ref={excelInputRef}
             type="file"
@@ -173,20 +194,18 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
           />
         </div>
 
-        {/* Split Button */}
         <Button
           onClick={splitExcel}
-          disabled={!selectedExcelFile || uploading}
+          disabled={!selectedExcelFile || processing}
           className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-600"
         >
-          {uploading ? "Разделяем файл..." : "Разделить по цене"}
+          {processing ? "Разделяем файл..." : "Разделить по цене"}
         </Button>
 
-        {/* Download Results */}
         {splitResults && (
           <div className="space-y-3 border-t border-gray-600 pt-4">
             <h4 className="text-sm font-medium text-gray-300">Результаты разделения:</h4>
-            
+
             <div className="grid grid-cols-2 gap-3">
               <Button
                 onClick={() => downloadFile('low')}
@@ -195,11 +214,9 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
               >
                 <Download className="mr-2 h-4 w-4" />
                 До 10 платины
-                {splitResults.lowCount && (
-                  <span className="ml-1 text-xs">({splitResults.lowCount})</span>
-                )}
+                <span className="ml-1 text-xs">({splitResults.lowCount})</span>
               </Button>
-              
+
               <Button
                 onClick={() => downloadFile('high')}
                 variant="outline"
@@ -207,9 +224,7 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
               >
                 <Download className="mr-2 h-4 w-4" />
                 От 11 платины
-                {splitResults.highCount && (
-                  <span className="ml-1 text-xs">({splitResults.highCount})</span>
-                )}
+                <span className="ml-1 text-xs">({splitResults.highCount})</span>
               </Button>
             </div>
           </div>
@@ -218,8 +233,8 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
         <div className="text-xs text-gray-400 bg-gray-700 rounded-lg p-3">
           <p className="font-medium mb-1">Как это работает:</p>
           <ul className="space-y-1 text-gray-400">
-            <li>• Загрузите Excel файл с ценами в столбце D</li>
-            <li>• Система разделит предметы: до 10 платины и от 11 платины</li>
+            <li>• Загрузите Excel файл с ценами</li>
+            <li>• Система разделит предметы по столбцу "Цены продажи" (≥60% ≤10 или ≥11)</li>
             <li>• Каждый файл будет сжат без пустых строк</li>
             <li>• Скачайте оба файла отдельно</li>
           </ul>
