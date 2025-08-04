@@ -13,6 +13,7 @@ interface ExcelSplitProps {
 export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitProps) {
   const [selectedExcelFile, setSelectedExcelFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [threshold, setThreshold] = useState(11);
   const [splitResults, setSplitResults] = useState<{
     lowPriceData: any[];
     highPriceData: any[];
@@ -66,25 +67,21 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
       const highPriceData: any[] = [];
 
       data.forEach((row: any) => {
-        const pricesStr = row['Цены продажи'] || '';
-        const prices = pricesStr.split(',').map(p => parseFloat(p.trim()) || 0).filter(p => !isNaN(p));
+        const pricesStr = row['Цена продажи'] || '';
+        const prices = pricesStr.split(',').map((p: string) => parseFloat(p.trim()) || 0).filter((p: number) => !isNaN(p));
 
         if (prices.length === 0) {
           lowPriceData.push(row); // Если нет цен, в низкие
           return;
         }
 
-        const lowCount = prices.filter(p => p <= 10).length;
-        const highCount = prices.filter(p => p >= 11).length;
-        const totalCount = prices.length;
-        const threshold = Math.ceil(totalCount * 0.6); // 60% для большинства
+        const lowCount = prices.filter((p: number) => p < threshold).length;
+        const highCount = prices.filter((p: number) => p >= threshold).length;
 
-        if (lowCount >= threshold) {
-          lowPriceData.push(row);
-        } else if (highCount >= threshold) {
+        // Большинство цен определяет файл
+        if (highCount > lowCount) {
           highPriceData.push(row);
         } else {
-          // Если ни один критерий не выполнен (например, 50/50), в низкие
           lowPriceData.push(row);
         }
       });
@@ -101,7 +98,7 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
 
       toast({
         title: "Разделение завершено",
-        description: `Файл разделен: ${lowPriceData.length} предметов до 10 платины, ${highPriceData.length} предметов от 11 платины`,
+        description: `Файл разделен: ${lowPriceData.length} предметов до ${threshold-1} платины, ${highPriceData.length} предметов от ${threshold} платины`,
       });
     } catch (error) {
       console.error(error);
@@ -151,17 +148,28 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
       <CardContent className="space-y-6">
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-gray-300">Выберите Excel файл</h3>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => excelInputRef.current?.click()}
-              className="border-gray-600 hover:bg-gray-700"
-              disabled={processing}
-            >
-              <Upload className="mr-2 h-4 w-4" />
-              Выбрать Excel
-            </Button>
+            <h3 className="text-sm font-medium text-gray-300">Порог разделения (платина)</h3>
+            <div className="flex items-center space-x-2">
+              <input
+                type="number"
+                value={threshold}
+                onChange={(e) => setThreshold(parseInt(e.target.value) || 11)}
+                min="1"
+                max="100"
+                className="w-16 px-2 py-1 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                disabled={processing}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => excelInputRef.current?.click()}
+                className="border-gray-600 hover:bg-gray-700"
+                disabled={processing}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Выбрать Excel
+              </Button>
+            </div>
           </div>
 
           {selectedExcelFile ? (
@@ -213,7 +221,7 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
                 className="flex items-center justify-center bg-green-900/20 border-green-600 text-green-400 hover:bg-green-900/30"
               >
                 <Download className="mr-2 h-4 w-4" />
-                До 10 платины
+                До {threshold-1} платины
                 <span className="ml-1 text-xs">({splitResults.lowCount})</span>
               </Button>
 
@@ -223,7 +231,7 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
                 className="flex items-center justify-center bg-red-900/20 border-red-600 text-red-400 hover:bg-red-900/30"
               >
                 <Download className="mr-2 h-4 w-4" />
-                От 11 платины
+                От {threshold} платины
                 <span className="ml-1 text-xs">({splitResults.highCount})</span>
               </Button>
             </div>
@@ -233,10 +241,11 @@ export function ExcelSplit({ onJobCreated, onProcessingComplete }: ExcelSplitPro
         <div className="text-xs text-gray-400 bg-gray-700 rounded-lg p-3">
           <p className="font-medium mb-1">Как это работает:</p>
           <ul className="space-y-1 text-gray-400">
+            <li>• Установите порог разделения (по умолчанию 11 платины)</li>
             <li>• Загрузите Excel файл с ценами</li>
-            <li>• Система разделит предметы по столбцу "Цены продажи" (≥60% ≤10 или ≥11)</li>
-            <li>• Каждый файл будет сжат без пустых строк</li>
-            <li>• Скачайте оба файла отдельно</li>
+            <li>• Система проверит большинство цен у каждого предмета</li>
+            <li>• Если больше цен больше или равно порогу → в high_price файл</li>
+            <li>• Если больше цен меньше порога → в low_price файл</li>
           </ul>
         </div>
       </CardContent>

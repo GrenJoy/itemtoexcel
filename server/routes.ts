@@ -144,6 +144,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No Excel file provided" });
       }
 
+      const threshold = parseInt(req.body.threshold) || 11; // Default to 11 if not provided
+
       // Create processing job
       const job = await storage.createProcessingJob({
         status: "processing",
@@ -154,15 +156,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         logs: []
       });
 
-      // Split Excel asynchronously
+      // Split Excel asynchronously with custom threshold
       const sessionId = req.sessionID;
-      splitExcelByPriceAsync(job.id, sessionId, file).catch(error => {
+      splitExcelByPriceAsync(job.id, sessionId, file, threshold).catch(error => {
         console.error('Error splitting Excel:', error);
         storage.updateProcessingJob(job.id, { status: "failed" });
         storage.addProcessingLog(job.id, `Error: ${error instanceof Error ? error.message : String(error)}`);
       });
 
-      res.json({ jobId: job.id });
+      res.json({ jobId: job.id, threshold });
     } catch (error) {
       res.status(500).json({ message: "Failed to start Excel split" });
     }
@@ -545,7 +547,7 @@ async function updatePricesFromExcelAsync(jobId: string, sessionId: string, exce
   }
 }
 
-async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFile: Express.Multer.File) {
+async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFile: Express.Multer.File, threshold: number = 11) {
   await storage.addProcessingLog(jobId, "Starting Excel split by price...");
   
   try {
@@ -584,16 +586,25 @@ async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFil
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber > 1) {
         totalRows++;
-        const priceCell = row.getCell(5); // Column E (average price column)
-        const priceValue = priceCell.value;
         
-        // Extract first number from price cell
-        let firstPrice = 0;
-        if (priceValue) {
-          const priceStr = priceValue.toString();
-          const priceMatch = priceStr.match(/^\d+/);
-          if (priceMatch) {
-            firstPrice = parseInt(priceMatch[0]);
+        // Get sell prices from column C (3rd column in new format)
+        const sellPricesCell = row.getCell(3);
+        const sellPricesValue = sellPricesCell.value;
+        
+        let shouldGoToHighPrice = false;
+        
+        if (sellPricesValue) {
+          const pricesStr = sellPricesValue.toString();
+          // Parse all prices from string like "10, 11, 12, 13, 14"
+          const prices = pricesStr.split(',').map(p => parseFloat(p.trim())).filter(p => !isNaN(p));
+          
+          if (prices.length > 0) {
+            // Count prices below and above threshold
+            const lowPriceCount = prices.filter(p => p < threshold).length;
+            const highPriceCount = prices.filter(p => p >= threshold).length;
+            
+            // If majority of prices are >= threshold, go to high price file
+            shouldGoToHighPrice = highPriceCount > lowPriceCount;
           }
         }
         
@@ -603,13 +614,13 @@ async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFil
           rowValues[colNumber - 1] = cell.value;
         });
         
-        // Add to appropriate worksheet based on price
-        if (firstPrice <= 10) {
-          lowPriceWorksheet.addRow(rowValues);
-          lowPriceCount++;
-        } else {
+        // Add to appropriate worksheet based on price logic
+        if (shouldGoToHighPrice) {
           highPriceWorksheet.addRow(rowValues);
           highPriceCount++;
+        } else {
+          lowPriceWorksheet.addRow(rowValues);
+          lowPriceCount++;
         }
       }
     });
@@ -619,7 +630,7 @@ async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFil
       processedItems: totalRows 
     });
 
-    await storage.addProcessingLog(jobId, `Split completed: ${lowPriceCount} low price items, ${highPriceCount} high price items`);
+    await storage.addProcessingLog(jobId, `Split completed with threshold ${threshold}: ${lowPriceCount} low price items, ${highPriceCount} high price items`);
 
     // Generate Excel buffers
     const lowPriceBuffer = await lowPriceWorkbook.xlsx.writeBuffer();
