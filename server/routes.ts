@@ -697,15 +697,15 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
       // Check if item already exists
       const existingItem = await storage.findInventoryItemByName(sessionId, itemName);
       
-      if (existingItem && mode === 'edit') {
-        // Update quantity (add to existing)
+      if (existingItem && (mode === 'edit' || mode === 'online')) {
+        // Update quantity (add to existing) for edit and online modes
         await storage.updateInventoryItemQuantity(sessionId, {
           id: existingItem.id,
           quantity: existingItem.quantity + totalQuantity
         });
         await storage.addProcessingLog(jobId, `Updated quantity for: ${itemName} (+${totalQuantity}, total: ${existingItem.quantity + totalQuantity})`);
       } else if (existingItem) {
-        // Replace quantity for non-edit modes
+        // Replace quantity for oneshot mode only
         await storage.updateInventoryItemQuantity(sessionId, {
           id: existingItem.id,
           quantity: totalQuantity
