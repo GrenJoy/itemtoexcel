@@ -5,7 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { IStorage } from "./storage";
 
-const sql = neon(process.env.DATABASE_URL!);
+const sql = neon(process.env.DATABASE_URL || "postgresql://neondb_owner:npg_ymBUuM6EPK1V@ep-dark-firefly-a209zbt5-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require");
 const db = drizzle(sql);
 
 export class PostgresStorage implements IStorage {
