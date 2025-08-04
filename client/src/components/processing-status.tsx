@@ -19,13 +19,14 @@ export function ProcessingStatus({ jobId, onComplete }: ProcessingStatusProps) {
 
   useEffect(() => {
     if (job?.status === "completed") {
+      // Force refresh inventory data immediately
       onComplete();
-      // Auto-hide after 3 seconds when completed
+      // Auto-hide after 2 seconds when completed
       setTimeout(() => {
         if (job?.status === "completed") {
           onComplete();
         }
-      }, 3000);
+      }, 2000);
     }
   }, [job?.status, onComplete]);
 

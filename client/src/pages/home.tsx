@@ -97,8 +97,11 @@ export default function Home() {
   };
 
   const handleProcessingComplete = () => {
+    // Force multiple refetches to ensure UI updates
     refetchInventory();
-    // Small delay to allow user to see completion status
+    setTimeout(() => refetchInventory(), 500);
+    setTimeout(() => refetchInventory(), 1000);
+    // Hide processing status
     setTimeout(() => {
       setCurrentJobId(null);
     }, 2000);

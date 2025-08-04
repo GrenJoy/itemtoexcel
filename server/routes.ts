@@ -698,12 +698,28 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
       const existingItem = await storage.findInventoryItemByName(sessionId, itemName);
       
       if (existingItem) {
-        // Always add to existing quantity for all modes
-        await storage.updateInventoryItemQuantity(sessionId, {
-          id: existingItem.id,
-          quantity: existingItem.quantity + totalQuantity
-        });
-        await storage.addProcessingLog(jobId, `Updated quantity for: ${itemName} (+${totalQuantity}, total: ${existingItem.quantity + totalQuantity})`);
+        // Always add to existing quantity and update prices for all modes
+        const marketData = await processItemForMarket(itemName);
+        
+        if (marketData) {
+          // Update both quantity and market data
+          await storage.updateInventoryItem(sessionId, existingItem.id, {
+            quantity: existingItem.quantity + totalQuantity,
+            sellPrices: marketData.sellPrices,
+            buyPrices: marketData.buyPrices,
+            avgSell: marketData.avgSell,
+            avgBuy: marketData.avgBuy,
+            marketUrl: marketData.marketUrl
+          });
+          await storage.addProcessingLog(jobId, `Updated quantity and prices for: ${itemName} (+${totalQuantity}, total: ${existingItem.quantity + totalQuantity}) - ${marketData.avgSell} платины`);
+        } else {
+          // Update only quantity if no market data
+          await storage.updateInventoryItemQuantity(sessionId, {
+            id: existingItem.id,
+            quantity: existingItem.quantity + totalQuantity
+          });
+          await storage.addProcessingLog(jobId, `Updated quantity for: ${itemName} (+${totalQuantity}, total: ${existingItem.quantity + totalQuantity})`);
+        }
       } else {
         // Get market data and create new item
         const marketData = await processItemForMarket(itemName);
