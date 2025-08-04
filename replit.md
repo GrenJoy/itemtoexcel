@@ -54,12 +54,13 @@ Processing Status: Auto-hide after completion with 2-second delay
 - **Security**: CORS and basic security headers configured
 
 ## Image Processing Pipeline
-- **AI Integration**: Google Gemini 2.5 Flash model for OCR and text extraction
+- **AI Integration**: Google Gemini 2.5 Flash model for OCR and text extraction with quantity detection
 - **Processing Flow**: Async job-based processing with status tracking
 - **File Constraints**: 10MB file size limit, JPEG/PNG support
 - **Error Recovery**: Comprehensive error handling and logging for failed operations
 - **Excel Integration**: Support for uploading existing Excel files and merging with new screenshot data
 - **Dual Processing Modes**: New inventory creation and existing inventory editing workflows
+- **Quantity Recognition**: Enhanced prompt to detect item quantities from screenshot badges (x2, x6, etc.)
 
 ## Market Data Integration
 - **External API**: Warframe Market v2 API integration

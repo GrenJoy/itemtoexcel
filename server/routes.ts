@@ -452,7 +452,7 @@ async function updatePricesFromExcelAsync(jobId: string, sessionId: string, exce
     await storage.addProcessingLog(jobId, `Processing Excel file: ${excelFile.originalname}`);
     
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(excelFile.buffer);
+    await workbook.xlsx.load(Buffer.from(excelFile.buffer));
     const worksheet = workbook.getWorksheet(1);
     
     if (!worksheet) {
@@ -556,7 +556,7 @@ async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFil
     await storage.addProcessingLog(jobId, `Processing Excel file: ${excelFile.originalname}`);
     
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(excelFile.buffer);
+    await workbook.xlsx.load(Buffer.from(excelFile.buffer));
     const worksheet = workbook.getWorksheet(1);
     
     if (!worksheet) {
@@ -649,7 +649,7 @@ async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFil
 async function processImagesAsync(jobId: string, sessionId: string, files: Express.Multer.File[], mode: 'oneshot' | 'online' | 'edit' = 'online') {
   await storage.addProcessingLog(jobId, "Starting image analysis...");
 
-  const allItemNames: string[] = [];
+  const allItems: Array<{ name: string; quantity: number }> = [];
 
   // Process each image
   for (let i = 0; i < files.length; i++) {
@@ -659,7 +659,7 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
     try {
       const base64Image = file.buffer.toString('base64');
       const items = await analyzeInventoryImage(base64Image);
-      allItemNames.push(...items);
+      allItems.push(...items);
 
       await storage.updateProcessingJob(jobId, { processedImages: i + 1 });
       await storage.addProcessingLog(jobId, `Found ${items.length} items in ${file.originalname}`);
@@ -668,10 +668,10 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
     }
   }
 
-  // Count item quantities
+  // Count item quantities (combine same items from different screenshots)
   const itemCounts = new Map<string, number>();
-  for (const itemName of allItemNames) {
-    itemCounts.set(itemName, (itemCounts.get(itemName) || 0) + 1);
+  for (const item of allItems) {
+    itemCounts.set(item.name, (itemCounts.get(item.name) || 0) + item.quantity);
   }
 
   await storage.updateProcessingJob(jobId, { 
@@ -683,18 +683,25 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
 
   let processedCount = 0;
   // Process each unique item
-  for (const [itemName, quantity] of Array.from(itemCounts.entries())) {
+  for (const [itemName, totalQuantity] of Array.from(itemCounts.entries())) {
     try {
       // Check if item already exists
       const existingItem = await storage.findInventoryItemByName(sessionId, itemName);
       
-      if (existingItem) {
-        // Update quantity
+      if (existingItem && mode === 'edit') {
+        // Update quantity (add to existing)
         await storage.updateInventoryItemQuantity(sessionId, {
           id: existingItem.id,
-          quantity: existingItem.quantity + quantity
+          quantity: existingItem.quantity + totalQuantity
         });
-        await storage.addProcessingLog(jobId, `Updated quantity for: ${itemName} (+${quantity})`);
+        await storage.addProcessingLog(jobId, `Updated quantity for: ${itemName} (+${totalQuantity}, total: ${existingItem.quantity + totalQuantity})`);
+      } else if (existingItem) {
+        // Replace quantity for non-edit modes
+        await storage.updateInventoryItemQuantity(sessionId, {
+          id: existingItem.id,
+          quantity: totalQuantity
+        });
+        await storage.addProcessingLog(jobId, `Updated quantity for: ${itemName} (${totalQuantity}x)`);
       } else {
         // Get market data and create new item
         const marketData = await processItemForMarket(itemName);
@@ -703,7 +710,7 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
           await storage.createInventoryItem(sessionId, {
             name: itemName,
             slug: marketData.slug,
-            quantity,
+            quantity: totalQuantity,
             sellPrices: marketData.sellPrices,
             buyPrices: marketData.buyPrices,
             avgSell: marketData.avgSell,
@@ -711,12 +718,12 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
             marketUrl: marketData.marketUrl,
             category: itemName.includes('(Чертеж)') ? 'Чертежи' : 'Prime части'
           });
-          await storage.addProcessingLog(jobId, `Added new item: ${itemName} (${quantity}x)`);
+          await storage.addProcessingLog(jobId, `Added new item: ${itemName} (${totalQuantity}x) - ${marketData.avgSell} платины`);
         } else {
           await storage.createInventoryItem(sessionId, {
             name: itemName,
             slug: null,
-            quantity,
+            quantity: totalQuantity,
             sellPrices: [],
             buyPrices: [],
             avgSell: 0,
@@ -724,7 +731,7 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
             marketUrl: null,
             category: 'Unknown'
           });
-          await storage.addProcessingLog(jobId, `Added item (not found in market): ${itemName} (${quantity}x)`);
+          await storage.addProcessingLog(jobId, `Added item (not found in market): ${itemName} (${totalQuantity}x)`);
         }
       }
 
@@ -750,7 +757,7 @@ async function loadExcelFileAsync(jobId: string, sessionId: string, excelFile: E
     await storage.addProcessingLog(jobId, "Cleared existing inventory");
     
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(excelFile.buffer);
+    await workbook.xlsx.load(Buffer.from(excelFile.buffer));
     const worksheet = workbook.getWorksheet(1);
     
     if (!worksheet) {
