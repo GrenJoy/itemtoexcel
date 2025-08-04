@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ 
-  apiKey: process.env.GEMINI_API_KEY || "AIzaSyD_bfv8pDgRFeCHkb663iTcounqJdwxIAE"
+  apiKey: process.env.GEMINI_API_KEY!
 });
 
 export async function analyzeInventoryImage(imageBase64: string): Promise<{ name: string; quantity: number }[]> {
