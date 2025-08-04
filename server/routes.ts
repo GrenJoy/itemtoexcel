@@ -285,15 +285,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Warframe Inventory');
 
-      // Add headers
+      // Add headers (simplified format)
       worksheet.addRow([
         'Название',
         'Количество', 
-        'Slug',
-        'Цены продажи',
-        'Цены покупки',
-        'Средняя продажа',
-        'Средняя покупка',
+        'Цена продажи',
+        'Цена покупки',
+        'Средняя цена (продажи)',
         'Ссылка'
       ]);
 
@@ -302,11 +300,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         worksheet.addRow([
           item.name,
           item.quantity,
-          item.slug || 'НЕ НАЙДЕН',
           item.sellPrices?.join(', ') || 'Нет',
           item.buyPrices?.join(', ') || 'Нет',
           item.avgSell || 0,
-          item.avgBuy || 0,
           item.marketUrl || 'N/A'
         ]);
       }
@@ -588,7 +584,7 @@ async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFil
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber > 1) {
         totalRows++;
-        const priceCell = row.getCell(4); // Column D (price column)
+        const priceCell = row.getCell(5); // Column E (average price column)
         const priceValue = priceCell.value;
         
         // Extract first number from price cell
@@ -776,23 +772,21 @@ async function loadExcelFileAsync(jobId: string, sessionId: string, excelFile: E
       if (rowNumber > 1) { // Skip header row
         const itemName = row.getCell(1).value?.toString();
         const quantity = parseInt(row.getCell(2).value?.toString() || '0');
-        const slug = row.getCell(3).value?.toString();
-        const sellPrices = row.getCell(4).value?.toString();
-        const buyPrices = row.getCell(5).value?.toString();
-        const avgSell = parseFloat(row.getCell(6).value?.toString() || '0');
-        const avgBuy = parseFloat(row.getCell(7).value?.toString() || '0');
-        const marketUrl = row.getCell(8).value?.toString();
+        const sellPrices = row.getCell(3).value?.toString();
+        const buyPrices = row.getCell(4).value?.toString();
+        const avgSell = parseFloat(row.getCell(5).value?.toString() || '0');
+        const marketUrl = row.getCell(6).value?.toString();
         
         if (itemName) {
           // Create item in database
           storage.createInventoryItem(sessionId, {
             name: itemName,
-            slug: slug === 'НЕ НАЙДЕН' ? null : slug,
+            slug: null, // No longer needed
             quantity,
             sellPrices: sellPrices && sellPrices !== 'Нет' ? sellPrices.split(', ').map(Number) : [],
             buyPrices: buyPrices && buyPrices !== 'Нет' ? buyPrices.split(', ').map(Number) : [],
             avgSell,
-            avgBuy,
+            avgBuy: 0, // No longer needed
             marketUrl: marketUrl === 'N/A' ? null : marketUrl,
             category: itemName.includes('(Чертеж)') ? 'Чертежи' : 'Prime части'
           }).then(() => {

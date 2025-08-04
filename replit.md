@@ -74,6 +74,7 @@ Processing Status: Auto-hide after completion with 2-second delay
 - **Download Mechanism**: Browser-based file download with proper MIME types
 - **Import Capability**: Excel file upload and parsing for existing inventory management
 - **Merge Logic**: Automatic quantity addition for existing items, new item creation for unknowns
+- **Excel Format (Updated Jan 2025)**: Simplified columns - Название, Количество, Цена продажи, Цена покупки, Средняя цена (продажи), Ссылка
 
 ## Development Features
 - **Hot Reload**: Vite HMR for rapid development
