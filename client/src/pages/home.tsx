@@ -12,13 +12,15 @@ import { Statistics } from "@/components/statistics";
 import { EditQuantityModal } from "@/components/edit-quantity-modal";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Download, Plus, FileEdit, Trash2, RefreshCw, Split } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Bot, Download, Plus, FileEdit, Trash2, RefreshCw, Split, HelpCircle } from "lucide-react";
 import type { InventoryItem } from "@shared/schema";
 
 export default function Home() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'oneshot' | 'edit' | 'online' | 'price-update' | 'split'>('oneshot');
+  const [helpOpen, setHelpOpen] = useState(false);
   const { toast } = useToast();
 
   const { data: inventoryItems = [], isLoading: loadingInventory, refetch: refetchInventory } = useQuery({
@@ -113,8 +115,7 @@ export default function Home() {
                 <Bot className="text-white text-xl" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-white">Warframe Inventory Tracker</h1>
-                <p className="text-sm text-gray-400">AI-powered inventory management</p>
+                <h1 className="text-xl font-bold text-white">Warframe Items to Excel</h1>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -133,9 +134,29 @@ export default function Home() {
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Data
               </Button>
-              <div className="text-xs text-gray-400">
-                Сделано игроком GrendematriX
-              </div>
+              <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white hover:bg-gray-700">
+                    <HelpCircle className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-gray-800 border-gray-700 text-white">
+                  <DialogHeader>
+                    <DialogTitle className="text-white">Справка</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <p className="text-blue-400 font-medium">Сделано игроком GrendematriX</p>
+                    <p className="text-gray-300 text-sm">
+                      Я много тестировал но все же в 1м проценте случаев бывает ошибка при обработке фото 
+                      и вместо "Акцельтра" будет "Акцельстра" и так далее.
+                    </p>
+                    <div className="text-sm text-gray-300">
+                      <p className="font-medium">Для связи - предложений - замечаний можете обратится в дисскорд:</p>
+                      <p className="text-blue-400 font-mono">grenjoy</p>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
         </div>
@@ -299,9 +320,6 @@ export default function Home() {
         <footer className="mt-12 text-center py-8 border-t border-gray-700">
           <p className="text-gray-400 text-sm">
             Создано игроком <span className="text-blue-400 font-medium">GrendematriX</span> для сообщества Warframe
-          </p>
-          <p className="text-gray-500 text-xs mt-2">
-            Powered by Google Gemini AI • Warframe Market API • React + TypeScript
           </p>
         </footer>
       </div>
