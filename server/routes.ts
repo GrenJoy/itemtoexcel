@@ -503,6 +503,7 @@ async function updatePricesFromExcelAsync(jobId: string, sessionId: string, exce
           // Create item in database with updated prices
           await storage.createInventoryItem(sessionId, {
             name: itemData.name,
+            sessionId,
             slug: marketData.slug,
             quantity: itemData.quantity,
             sellPrices: marketData.sellPrices,
@@ -518,6 +519,7 @@ async function updatePricesFromExcelAsync(jobId: string, sessionId: string, exce
           // Create item without market data
           await storage.createInventoryItem(sessionId, {
             name: itemData.name,
+            sessionId,
             slug: null,
             quantity: itemData.quantity,
             sellPrices: [],
@@ -716,6 +718,7 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
         if (marketData) {
           await storage.createInventoryItem(sessionId, {
             name: itemName,
+            sessionId,
             slug: marketData.slug,
             quantity: totalQuantity,
             sellPrices: marketData.sellPrices,
@@ -729,6 +732,7 @@ async function processImagesAsync(jobId: string, sessionId: string, files: Expre
         } else {
           await storage.createInventoryItem(sessionId, {
             name: itemName,
+            sessionId,
             slug: null,
             quantity: totalQuantity,
             sellPrices: [],
@@ -792,6 +796,7 @@ async function loadExcelFileAsync(jobId: string, sessionId: string, excelFile: E
           // Create item in database
           storage.createInventoryItem(sessionId, {
             name: itemName,
+            sessionId,
             slug: null, // No longer needed
             quantity,
             sellPrices: sellPrices && sellPrices !== 'Нет' ? sellPrices.split(', ').map(Number) : [],
