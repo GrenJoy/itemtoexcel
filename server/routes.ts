@@ -452,7 +452,7 @@ async function updatePricesFromExcelAsync(jobId: string, sessionId: string, exce
     await storage.addProcessingLog(jobId, `Processing Excel file: ${excelFile.originalname}`);
     
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(Buffer.from(excelFile.buffer));
+    await workbook.xlsx.load(excelFile.buffer as any);
     const worksheet = workbook.getWorksheet(1);
     
     if (!worksheet) {
@@ -556,7 +556,7 @@ async function splitExcelByPriceAsync(jobId: string, sessionId: string, excelFil
     await storage.addProcessingLog(jobId, `Processing Excel file: ${excelFile.originalname}`);
     
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(Buffer.from(excelFile.buffer));
+    await workbook.xlsx.load(excelFile.buffer as any);
     const worksheet = workbook.getWorksheet(1);
     
     if (!worksheet) {
@@ -757,7 +757,7 @@ async function loadExcelFileAsync(jobId: string, sessionId: string, excelFile: E
     await storage.addProcessingLog(jobId, "Cleared existing inventory");
     
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(Buffer.from(excelFile.buffer));
+    await workbook.xlsx.load(excelFile.buffer as any);
     const worksheet = workbook.getWorksheet(1);
     
     if (!worksheet) {

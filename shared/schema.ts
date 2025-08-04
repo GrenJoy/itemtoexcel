@@ -5,6 +5,7 @@ import { z } from "zod";
 
 export const inventoryItems = pgTable("inventory_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: text("session_id").notNull(),
   name: text("name").notNull(),
   slug: text("slug"),
   quantity: integer("quantity").notNull().default(1),
